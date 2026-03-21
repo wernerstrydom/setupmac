@@ -118,12 +118,14 @@ func createBrewUser(r *Runner) Result {
 	return OKResult("brew-user", fmt.Sprintf("created hidden service user %q", brewUserName))
 }
 
-// writeBrewSudoers writes /etc/sudoers.d/homebrew-multiuser, granting admin
-// group members passwordless sudo to run the brew binary as homebrew_owner.
+// writeBrewSudoers writes /etc/sudoers.d/homebrew-multiuser, granting all
+// local users (staff group) passwordless sudo to run the brew binary as
+// homebrew_owner. The rule is intentionally scoped to the exact binary path
+// so it does not widen sudo access in any other way.
 // The file is validated by visudo before being moved into place.
 func writeBrewSudoers(r *Runner, brewBinPath string) Result {
 	content := fmt.Sprintf(
-		"# Passwordless delegation: admin group → %s, brew binary only\n%%admin ALL=(%s) NOPASSWD: %s\n",
+		"# Passwordless delegation: all local users → %s, brew binary only\n%%staff ALL=(%s) NOPASSWD: %s\n",
 		brewUserName, brewUserName, brewBinPath,
 	)
 
