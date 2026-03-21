@@ -3,6 +3,8 @@ package setup
 import (
 	"fmt"
 	"os"
+	"os/user"
+	"runtime"
 	"strings"
 
 	"github.com/wstrydom/setupmac/internal/macos"
@@ -20,6 +22,7 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 	results = append(results, verifyARD(r))
 	results = append(results, verifyFileVault(r))
 	results = append(results, verifyAutoLogin(r, username))
+	results = append(results, verifyHomebrew())
 
 	return results
 }
@@ -150,4 +153,32 @@ func verifyAutoLogin(r *Runner, username string) Result {
 	}
 
 	return OKResult("verify-autologin", "Auto-login")
+}
+
+func verifyHomebrew() Result {
+	// All checks use os/user and os.Stat — no shell calls needed.
+	if _, err := user.Lookup(brewUserName); err != nil {
+		return FailResult("verify-homebrew", "user homebrew_owner does not exist", err)
+	}
+
+	if _, err := os.Stat(sudoersPath); err != nil {
+		return FailResult("verify-homebrew", sudoersPath+" not found", err)
+	}
+
+	bin := brewBin()
+	if _, err := os.Stat(bin); err != nil {
+		return FailResult("verify-homebrew",
+			fmt.Sprintf("brew binary not found at %s", bin), err)
+	}
+
+	// The wrapper only exists on Apple Silicon; on Intel the real binary is
+	// already at /usr/local/bin/brew.
+	if runtime.GOARCH == "arm64" {
+		if _, err := os.Stat(brewWrapperPath); err != nil {
+			return FailResult("verify-homebrew",
+				"brew wrapper not found at "+brewWrapperPath, err)
+		}
+	}
+
+	return OKResult("verify-homebrew", "Homebrew")
 }

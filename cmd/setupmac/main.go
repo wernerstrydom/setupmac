@@ -91,6 +91,12 @@ func main() {
 		all = append(all, warn)
 	}
 
+	printSection("Homebrew (Multi-User)")
+	for _, res := range setup.SetupHomebrew(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("Verification")
 	verResults := setup.VerifyAll(r, ver, *username)
 	for _, res := range verResults {
