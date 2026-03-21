@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/user"
-	"runtime"
 	"strings"
 
 	"github.com/wstrydom/setupmac/internal/macos"
@@ -171,13 +170,14 @@ func verifyHomebrew() Result {
 			fmt.Sprintf("brew binary not found at %s", bin), err)
 	}
 
-	// The wrapper only exists on Apple Silicon; on Intel the real binary is
-	// already at /usr/local/bin/brew.
-	if runtime.GOARCH == "arm64" {
-		if _, err := os.Stat(brewWrapperPath); err != nil {
-			return FailResult("verify-homebrew",
-				"brew wrapper not found at "+brewWrapperPath, err)
-		}
+	if _, err := os.Stat(brewWrapperPath); err != nil {
+		return FailResult("verify-homebrew",
+			"brew wrapper not found at "+brewWrapperPath, err)
+	}
+
+	if _, err := os.Stat(pathsDPath); err != nil {
+		return FailResult("verify-homebrew",
+			"PATH not configured: "+pathsDPath+" not found", err)
 	}
 
 	return OKResult("verify-homebrew", "Homebrew")

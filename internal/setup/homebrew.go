@@ -8,13 +8,20 @@ import (
 	"os/user"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 const (
 	brewUserName    = "homebrew_owner"
 	brewUserDesc    = "Homebrew Dedicated Owner"
 	sudoersPath     = "/etc/sudoers.d/homebrew-multiuser"
-	brewWrapperPath = "/usr/local/bin/brew"
+	brewWrapperDir  = "/opt/macsetup"
+	brewWrapperPath = "/opt/macsetup/brew"
+	// pathsDPath is read by macOS path_helper, adding brewWrapperDir to PATH
+	// for all shells that source /etc/zprofile (the default on macOS).
+	pathsDPath = "/etc/paths.d/00-macsetup"
+	zshenvPath = "/etc/zshenv"
+	zshenvMark = "# Added by setupmac — brew wrapper path"
 )
 
 // BrewPrefix returns the Homebrew installation prefix for the running architecture.
@@ -31,12 +38,11 @@ func brewBin() string {
 
 // SetupHomebrew creates a dedicated homebrew_owner service account, installs
 // Homebrew under it, writes a sudoers drop-in so any admin user can run brew
-// without a password prompt, and (on Apple Silicon) places a transparent
-// wrapper at /usr/local/bin/brew.
+// without a password prompt, and places a wrapper at /opt/macsetup/brew that
+// transparently delegates to homebrew_owner on both Intel and Apple Silicon.
 //
-// On Intel, /usr/local/bin/brew IS the real brew binary — placing a wrapper
-// there would cause infinite recursion. Intel users call brew via
-// 'sudo -H -u homebrew_owner brew', covered by the sudoers drop-in.
+// The wrapper calls the real brew by its fully qualified path, so it works
+// on both architectures without any circular reference.
 func SetupHomebrew(r *Runner) []Result {
 	prefix := BrewPrefix()
 	bin := brewBin()
@@ -56,15 +62,8 @@ func SetupHomebrew(r *Runner) []Result {
 	}
 
 	results = append(results, installHomebrew(r, prefix, bin)...)
-
-	if runtime.GOARCH == "arm64" {
-		results = append(results, createBrewWrapper(r, bin))
-	} else {
-		// The wrapper would live at the same path as the real brew binary on
-		// Intel, which would make it call itself. Skip it and document why.
-		results = append(results, SkipResult("brew-wrapper",
-			"Intel: /usr/local/bin/brew is the real binary — use 'sudo -H -u homebrew_owner brew'"))
-	}
+	results = append(results, createBrewWrapper(r, bin))
+	results = append(results, injectBrewPath(r))
 
 	return results
 }
@@ -220,26 +219,28 @@ func installHomebrew(r *Runner, prefix, bin string) []Result {
 	return append(results, OKResult("brew-install", "Homebrew installed at "+bin))
 }
 
-// createBrewWrapper writes a shell script at /usr/local/bin/brew that
-// transparently delegates every brew invocation to homebrew_owner via sudo.
-// Only called on Apple Silicon where the paths are distinct.
+// createBrewWrapper writes /opt/macsetup/brew, a script that transparently
+// delegates every brew invocation to homebrew_owner by calling the real brew
+// binary at its fully qualified path. This avoids any circular reference and
+// works identically on Intel (/usr/local/bin/brew) and Apple Silicon
+// (/opt/homebrew/bin/brew).
 func createBrewWrapper(r *Runner, brewBinPath string) Result {
 	content := fmt.Sprintf("#!/bin/bash\n"+
-		"# %s — global brew wrapper\n"+
-		"# Delegates every brew invocation to the dedicated Homebrew owner account.\n"+
+		"# %s — transparent multi-user brew wrapper\n"+
+		"# Any user running 'brew' is automatically delegated to %s.\n"+
 		"# Passwordless via %s.\n"+
 		"exec sudo -H -u %s %s \"$@\"\n",
-		brewWrapperPath, sudoersPath, brewUserName, brewBinPath,
+		brewWrapperPath, brewUserName, sudoersPath, brewUserName, brewBinPath,
 	)
 
 	if r.DryRun {
 		fmt.Printf("  [dry-run] write %s\n", brewWrapperPath)
 		return OKResult("brew-wrapper",
-			fmt.Sprintf("would create wrapper at %s (dry-run)", brewWrapperPath))
+			fmt.Sprintf("would create %s (dry-run)", brewWrapperPath))
 	}
 
-	if err := os.MkdirAll("/usr/local/bin", 0755); err != nil {
-		return FailResult("brew-wrapper", "failed to create /usr/local/bin", err)
+	if err := os.MkdirAll(brewWrapperDir, 0755); err != nil {
+		return FailResult("brew-wrapper", "failed to create "+brewWrapperDir, err)
 	}
 
 	if err := os.WriteFile(brewWrapperPath, []byte(content), 0755); err != nil {
@@ -247,7 +248,46 @@ func createBrewWrapper(r *Runner, brewBinPath string) Result {
 			fmt.Sprintf("failed to write %s: %v", brewWrapperPath, err), err)
 	}
 
-	return OKResult("brew-wrapper", "global brew wrapper created at "+brewWrapperPath)
+	return OKResult("brew-wrapper", "brew wrapper created at "+brewWrapperPath)
+}
+
+// injectBrewPath ensures /opt/macsetup appears first in PATH for all users:
+//   - /etc/paths.d/00-macsetup  — picked up by macOS path_helper (all login shells)
+//   - /etc/zshenv               — runs before path_helper, guaranteeing precedence
+//
+// Using both means the wrapper takes priority over both /usr/local/bin/brew
+// (Intel) and /opt/homebrew/bin/brew (Apple Silicon) regardless of shell config.
+func injectBrewPath(r *Runner) Result {
+	if r.DryRun {
+		fmt.Printf("  [dry-run] write %s\n", pathsDPath)
+		fmt.Printf("  [dry-run] prepend %s in %s\n", brewWrapperDir, zshenvPath)
+		return OKResult("brew-path", "would configure PATH (dry-run)")
+	}
+
+	// paths.d entry — covers bash, zsh, and any shell that calls path_helper.
+	if err := os.WriteFile(pathsDPath, []byte(brewWrapperDir+"\n"), 0644); err != nil {
+		return FailResult("brew-path", "failed to write "+pathsDPath, err)
+	}
+
+	// /etc/zshenv runs before /etc/zprofile (where path_helper is called),
+	// so this guarantees /opt/macsetup is first even when path_helper reorders.
+	existing, _ := os.ReadFile(zshenvPath)
+	if strings.Contains(string(existing), zshenvMark) {
+		return SkipResult("brew-path", zshenvPath+" already updated")
+	}
+
+	f, err := os.OpenFile(zshenvPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return FailResult("brew-path", "failed to open "+zshenvPath, err)
+	}
+	defer f.Close()
+
+	if _, err := fmt.Fprintf(f, "\n%s\nexport PATH=\"%s:$PATH\"\n", zshenvMark, brewWrapperDir); err != nil {
+		return FailResult("brew-path", "failed to write to "+zshenvPath, err)
+	}
+
+	return OKResult("brew-path",
+		fmt.Sprintf("%s prepended to PATH in %s and %s", brewWrapperDir, zshenvPath, pathsDPath))
 }
 
 // chownPath sets the owner of path to the given username and group name,
