@@ -20,6 +20,7 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 	results = append(results, verifyScreenSaver(r))
 	results = append(results, verifyARD(r))
 	results = append(results, verifyFileVault(r))
+	results = append(results, verifyGuest(r))
 	results = append(results, verifyAutoLogin(r, username))
 	results = append(results, verifyHomebrew())
 
@@ -102,6 +103,16 @@ func verifyUniversalControl(r *Runner, ver macos.Version) Result {
 			fmt.Sprintf("Disabled=%q (want 1)", strings.TrimSpace(out)), err)
 	}
 	return OKResult("verify-universal-control", "Universal Control")
+}
+
+func verifyGuest(r *Runner) Result {
+	out, err := r.Read("defaults", "read",
+		"/Library/Preferences/com.apple.loginwindow", "GuestEnabled")
+	if err != nil || strings.TrimSpace(out) != "0" {
+		return FailResult("verify-guest",
+			fmt.Sprintf("GuestEnabled=%q (want 0)", strings.TrimSpace(out)), err)
+	}
+	return OKResult("verify-guest", "Guest account")
 }
 
 func verifyScreenSaver(r *Runner) Result {

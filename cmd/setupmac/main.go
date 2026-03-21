@@ -61,6 +61,11 @@ func main() {
 	printResult(res)
 	all = append(all, res)
 
+	printSection("Guest Account")
+	res = setup.DisableGuestAccount(r)
+	printResult(res)
+	all = append(all, res)
+
 	printSection("ARD / Remote Management")
 	for _, res := range setup.ConfigureARD(r, *vncPassword) {
 		printResult(res)
