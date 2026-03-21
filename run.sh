@@ -1,14 +1,14 @@
 #!/bin/bash
-# install.sh — download, verify, and run setupmac
+# run.sh — download, verify, and run setupmac
 #
 # Usage (flags are forwarded to setupmac):
-#   curl -fsSL https://raw.githubusercontent.com/wernerstrydom/setupmac/main/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/wernerstrydom/setupmac/main/run.sh \
 #     | sudo bash -s -- [--username USER] [--vnc-password PASS] [--skip-filevault] [--dry-run]
 #
 # For steps that prompt for a password (FileVault, auto-login), download and
 # run directly so stdin is attached to your terminal:
-#   curl -fsSL https://raw.githubusercontent.com/wernerstrydom/setupmac/main/install.sh \
-#     -o /tmp/install.sh && sudo bash /tmp/install.sh [flags]
+#   curl -fsSL https://raw.githubusercontent.com/wernerstrydom/setupmac/main/run.sh \
+#     -o /tmp/run.sh && sudo bash /tmp/run.sh [flags]
 
 set -euo pipefail
 
@@ -69,6 +69,7 @@ if [ "$EXPECTED" != "$ACTUAL" ]; then
 fi
 
 # ── Install ───────────────────────────────────────────────────────────────────
+mkdir -p "${INSTALL_DIR}"
 chmod +x "${WORK_DIR}/${ASSET}"
 mv "${WORK_DIR}/${ASSET}" "${INSTALL_DIR}/${BIN_NAME}"
 echo "==> Installed ${INSTALL_DIR}/${BIN_NAME}"
