@@ -124,9 +124,14 @@ func createBrewUser(r *Runner) Result {
 // so it does not widen sudo access in any other way.
 // The file is validated by visudo before being moved into place.
 func writeBrewSudoers(r *Runner, brewBinPath string) Result {
+	// sudo uses last-match-wins, so the Guest deny line must come after the
+	// staff allow line to override it regardless of Guest's group membership.
 	content := fmt.Sprintf(
-		"# Passwordless delegation: all local users → %s, brew binary only\n%%staff ALL=(%s) NOPASSWD: %s\n",
-		brewUserName, brewUserName, brewBinPath,
+		"# Passwordless delegation: all local users → %s, brew binary only\n"+
+			"%%staff ALL=(%s) NOPASSWD: %s\n"+
+			"# Guest account must never bypass authentication.\n"+
+			"Guest  ALL=(%s) !ALL\n",
+		brewUserName, brewUserName, brewBinPath, brewUserName,
 	)
 
 	if r.DryRun {
