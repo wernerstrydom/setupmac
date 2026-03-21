@@ -1,0 +1,21 @@
+# Build output
+bin/
+
+# Go test artefacts
+*.test
+*.out
+coverage.txt
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Vale downloaded styles (restored via `vale sync`)
+.vale/styles/
+
+# Temporary / scratch work
+scratchpad/
+tmp/

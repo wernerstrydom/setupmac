@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build macOS Intel (amd64)
+        run: |
+          GOOS=darwin GOARCH=amd64 go build \
+            -ldflags "-s -w" \
+            -o dist/setupmac-darwin-amd64 \
+            ./cmd/setupmac
+
+      - name: Build macOS Apple Silicon (arm64)
+        run: |
+          GOOS=darwin GOARCH=arm64 go build \
+            -ldflags "-s -w" \
+            -o dist/setupmac-darwin-arm64 \
+            ./cmd/setupmac
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum setupmac-darwin-amd64 setupmac-darwin-arm64 > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/setupmac-darwin-amd64
+            dist/setupmac-darwin-arm64
+            dist/checksums.txt
+          generate_release_notes: true

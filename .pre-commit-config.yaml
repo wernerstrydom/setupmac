@@ -1,0 +1,60 @@
+# Pre-commit hooks for setupmac
+#
+# Install:  pip install pre-commit && pre-commit install
+# Required tools (system):
+#   brew install golangci-lint vale
+#   go install golang.org/x/vuln/cmd/govulncheck@latest
+# After first install, pull Vale styles:
+#   vale sync
+
+repos:
+  # ── Go ────────────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      # Upgrade all direct and indirect deps when go.mod changes.
+      # If go.mod/go.sum are modified the commit is aborted — stage the
+      # refreshed files and re-commit to keep the lockfile current.
+      - id: go-update-deps
+        name: go get -u (update dependencies)
+        language: system
+        entry: bash -c 'go get -u ./... && go mod tidy'
+        pass_filenames: false
+        files: 'go\.mod$'
+
+      # Keep go.mod and go.sum consistent with imports on every Go edit.
+      - id: go-mod-tidy
+        name: go mod tidy
+        language: system
+        entry: go mod tidy
+        pass_filenames: false
+        files: '\.(go)$'
+
+      # Scan for known vulnerabilities in dependencies.
+      - id: govulncheck
+        name: govulncheck
+        language: system
+        entry: govulncheck ./...
+        pass_filenames: false
+        files: '(\.go|go\.mod)$'
+
+  # golangci-lint — https://golangci-lint.run
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.64.8
+    hooks:
+      - id: golangci-lint
+
+  # ── YAML ──────────────────────────────────────────────────────────────────
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+
+  # ── Markdown (Vale) ───────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: vale
+        name: vale (markdown lint)
+        language: system
+        entry: vale
+        files: '\.(md|markdown)$'
+        pass_filenames: true

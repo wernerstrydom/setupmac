@@ -1,0 +1,27 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck       # unchecked errors
+    - govet          # go vet passes
+    - ineffassign    # assignments to variables never used afterwards
+    - staticcheck    # staticcheck suite (SA*, S*, QF*, ST*)
+    - unused         # unused code
+    - gofmt          # formatting
+    - goimports      # import grouping and formatting
+    - gosimple       # simplification suggestions
+    - misspell       # common English misspellings in comments/strings
+    - nilerr         # returning nil after checking for a non-nil error
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/wstrydom/setupmac
+
+issues:
+  # Show all issues, not just the first N per linter.
+  max-issues-per-linter: 0
+  max-same-issues: 0
