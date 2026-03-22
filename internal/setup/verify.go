@@ -193,5 +193,11 @@ func verifyHomebrew() Result {
 			"PATH not configured: "+pathsDPath+" not found", err)
 	}
 
+	zprofile, _ := os.ReadFile(zprofilePath)
+	if !strings.Contains(string(zprofile), pathMark) {
+		return FailResult("verify-homebrew",
+			brewWrapperDir+" not prepended in "+zprofilePath+" — brew wrapper will not take PATH priority", nil)
+	}
+
 	return OKResult("verify-homebrew", "Homebrew")
 }

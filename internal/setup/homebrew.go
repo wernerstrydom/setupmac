@@ -21,9 +21,9 @@ const (
 	brewWrapperPath = "/opt/macsetup/brew"
 	// pathsDPath is read by macOS path_helper, adding brewWrapperDir to PATH
 	// for all shells that source /etc/zprofile (the default on macOS).
-	pathsDPath = "/etc/paths.d/00-macsetup"
-	zshenvPath = "/etc/zshenv"
-	zshenvMark = "# Added by setupmac — brew wrapper path"
+	pathsDPath   = "/etc/paths.d/00-macsetup"
+	zprofilePath = "/etc/zprofile"
+	pathMark     = "# Added by setupmac — brew wrapper path"
 )
 
 // BrewPrefix returns the Homebrew installation prefix for the running architecture.
@@ -306,42 +306,44 @@ func createBrewWrapper(r *Runner, brewBinPath string) Result {
 }
 
 // injectBrewPath ensures /opt/macsetup appears first in PATH for all users:
-//   - /etc/paths.d/00-macsetup  — picked up by macOS path_helper (all login shells)
-//   - /etc/zshenv               — runs before path_helper, guaranteeing precedence
+//   - /etc/paths.d/00-macsetup — read by path_helper; registers the directory
+//   - /etc/zprofile            — appended after the path_helper call so our
+//     directory is prepended to PATH after path_helper has run
 //
-// Using both means the wrapper takes priority over both /usr/local/bin/brew
-// (Intel) and /opt/homebrew/bin/brew (Apple Silicon) regardless of shell config.
+// /etc/zshenv would seem like the right place but it runs BEFORE path_helper
+// (which lives in /etc/zprofile). path_helper then reorders PATH, placing
+// /usr/local/bin first and undoing the prepend. Writing to /etc/zprofile
+// after path_helper is the reliable approach for login shells on macOS.
 func injectBrewPath(r *Runner) Result {
 	if r.DryRun {
 		fmt.Printf("  [dry-run] write %s\n", pathsDPath)
-		fmt.Printf("  [dry-run] prepend %s in %s\n", brewWrapperDir, zshenvPath)
+		fmt.Printf("  [dry-run] prepend %s in %s\n", brewWrapperDir, zprofilePath)
 		return OKResult("brew-path", "would configure PATH (dry-run)")
 	}
 
-	// paths.d entry — covers bash, zsh, and any shell that calls path_helper.
+	// paths.d entry — belt-and-suspenders; also covers bash via /etc/profile.
 	if err := os.WriteFile(pathsDPath, []byte(brewWrapperDir+"\n"), 0644); err != nil {
 		return FailResult("brew-path", "failed to write "+pathsDPath, err)
 	}
 
-	// /etc/zshenv runs before /etc/zprofile (where path_helper is called),
-	// so this guarantees /opt/macsetup is first even when path_helper reorders.
-	existing, _ := os.ReadFile(zshenvPath)
-	if strings.Contains(string(existing), zshenvMark) {
-		return SkipResult("brew-path", zshenvPath+" already updated")
+	// Append to /etc/zprofile so the prepend happens after path_helper runs.
+	existing, _ := os.ReadFile(zprofilePath)
+	if strings.Contains(string(existing), pathMark) {
+		return SkipResult("brew-path", zprofilePath+" already updated")
 	}
 
-	f, err := os.OpenFile(zshenvPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(zprofilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return FailResult("brew-path", "failed to open "+zshenvPath, err)
+		return FailResult("brew-path", "failed to open "+zprofilePath, err)
 	}
 	defer f.Close()
 
-	if _, err := fmt.Fprintf(f, "\n%s\nexport PATH=\"%s:$PATH\"\n", zshenvMark, brewWrapperDir); err != nil {
-		return FailResult("brew-path", "failed to write to "+zshenvPath, err)
+	if _, err := fmt.Fprintf(f, "\n%s\nexport PATH=\"%s:$PATH\"\n", pathMark, brewWrapperDir); err != nil {
+		return FailResult("brew-path", "failed to write to "+zprofilePath, err)
 	}
 
 	return OKResult("brew-path",
-		fmt.Sprintf("%s prepended to PATH in %s and %s", brewWrapperDir, zshenvPath, pathsDPath))
+		fmt.Sprintf("%s prepended to PATH in %s and %s", brewWrapperDir, zprofilePath, pathsDPath))
 }
 
 // chownPath sets the owner of path to the given username and group name,

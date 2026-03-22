@@ -101,6 +101,9 @@ func main() {
 		printResult(res)
 		all = append(all, res)
 	}
+	fmt.Println()
+	fmt.Println("  NOTE: open a new terminal (or run: source /etc/zprofile) before")
+	fmt.Println("  using brew, so the wrapper at /opt/macsetup/brew is on PATH.")
 
 	printSection("Verification")
 	verResults := setup.VerifyAll(r, ver, *username)
