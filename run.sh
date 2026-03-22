@@ -86,6 +86,8 @@ mv "${WORK_DIR}/${ASSET}" "${INSTALL_DIR}/${BIN_NAME}"
 echo "==> Installed ${INSTALL_DIR}/${BIN_NAME}"
 
 # ── Run ───────────────────────────────────────────────────────────────────────
+"${INSTALL_DIR}/${BIN_NAME}" version
+
 # Redirect stdin from /dev/tty so password prompts work even when this script
 # is being read from a curl pipe.
 exec "${INSTALL_DIR}/${BIN_NAME}" "$@" </dev/tty
