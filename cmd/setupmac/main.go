@@ -141,7 +141,7 @@ func main() {
 	}
 
 	printSection("Application Firewall")
-	for _, res := range setup.ConfigureFirewall(r) {
+	for _, res := range setup.ConfigureFirewall(r, ver) {
 		printResult(res)
 		all = append(all, res)
 	}
