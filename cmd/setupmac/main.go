@@ -11,6 +11,9 @@ import (
 	"github.com/wstrydom/setupmac/internal/setup"
 )
 
+// version is overridden at build time via -ldflags "-X main.version=vX.Y.Z".
+var version = "dev"
+
 func main() {
 	dryRun := flag.Bool("dry-run", false, "Print commands without executing")
 	username := flag.String("username", "", "Username to configure for auto-login")
@@ -127,7 +130,7 @@ func printHeader(ver macos.Version) {
 	if name != "" {
 		label = fmt.Sprintf("%s (%s)", ver.String(), name)
 	}
-	fmt.Println("=== headless-mac-setup ===")
+	fmt.Printf("=== setupmac %s ===\n", version)
 	fmt.Printf("macOS %s on %s\n", label, runtime.GOARCH)
 }
 

@@ -43,13 +43,24 @@ case "$(uname -m)" in
 esac
 
 ASSET="${BIN_NAME}-darwin-${ARCH}"
-BASE_URL="https://github.com/${REPO}/releases/latest/download"
+
+# ── Resolve latest release version ────────────────────────────────────────────
+# Follow the /releases/latest redirect and extract the tag from the final URL.
+VERSION="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+    "https://github.com/${REPO}/releases/latest" \
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')"
+if [ -z "$VERSION" ]; then
+    echo "error: could not determine latest release version" >&2
+    exit 1
+fi
+
+BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
 # ── Download ──────────────────────────────────────────────────────────────────
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-echo "==> Downloading ${ASSET}..."
+echo "==> Downloading ${BIN_NAME} ${VERSION}..."
 curl -fsSL --progress-bar "${BASE_URL}/${ASSET}"      -o "${WORK_DIR}/${ASSET}"
 curl -fsSL               "${BASE_URL}/checksums.txt"  -o "${WORK_DIR}/checksums.txt"
 

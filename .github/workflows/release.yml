@@ -30,14 +30,14 @@ jobs:
       - name: Build macOS Intel (amd64)
         run: |
           GOOS=darwin GOARCH=amd64 go build \
-            -ldflags "-s -w" \
+            -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o dist/setupmac-darwin-amd64 \
             ./cmd/setupmac
 
       - name: Build macOS Apple Silicon (arm64)
         run: |
           GOOS=darwin GOARCH=arm64 go build \
-            -ldflags "-s -w" \
+            -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o dist/setupmac-darwin-arm64 \
             ./cmd/setupmac
 
