@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/wernerstrydom/setupmac/main/run.sh 
 | Universal Control | Disabled on macOS 12.3+; skipped on older hardware |
 | Screen saver | Sets login window idle time to 0 to prevent lockout |
 | Guest account | Disables Guest login at the login window |
-| ARD / Remote Management | Activates Remote Desktop for all local users with full privileges |
+| ARD / Remote Management | On macOS < 12.1: activates Remote Desktop via `kickstart` for all local users with full privileges. On macOS 12.1+: Apple restricts `kickstart`; writes VNC preference keys and warns the operator to enable Remote Management via System Settings > General > Sharing or MDM |
 | FileVault | Disables encryption (required for auto-login to function) |
 | Auto-login | Configures automatic login for a named user |
 | Homebrew (multi-user) | Installs Homebrew under a dedicated `homebrew_owner` service account so any local user can run `brew` transparently |

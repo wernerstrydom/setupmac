@@ -67,7 +67,7 @@ func main() {
 	all = append(all, res)
 
 	printSection("ARD / Remote Management")
-	for _, res := range setup.ConfigureARD(r, *vncPassword) {
+	for _, res := range setup.ConfigureARD(r, ver, *vncPassword) {
 		printResult(res)
 		all = append(all, res)
 	}
