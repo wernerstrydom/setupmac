@@ -149,7 +149,7 @@ func symbol(s setup.Status) string {
 	case setup.OK:
 		return "\u2713" // ✓
 	case setup.Skip:
-		return "\u21b7" // ↷
+		return "\u2014" // —
 	case setup.Fail:
 		return "\u2717" // ✗
 	default:
