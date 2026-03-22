@@ -154,10 +154,15 @@ func ensureBrewUserAdmin(r *Runner) Result {
 	return OKResult("brew-user-admin", fmt.Sprintf("added %q to admin group", brewUserName))
 }
 
-// writeBrewSudoers writes /etc/sudoers.d/homebrew-multiuser, granting all
-// local users (staff group) passwordless sudo to run the brew binary as
-// homebrew_owner. The rule is intentionally scoped to the exact binary path
-// so it does not widen sudo access in any other way.
+// writeBrewSudoers writes /etc/sudoers.d/homebrew-multiuser with three rules:
+//
+//  1. %staff → homebrew_owner, brew binary only (day-to-day use)
+//  2. homebrew_owner → ALL, NOPASSWD: ALL (Homebrew installer calls sudo internally)
+//  3. root → homebrew_owner, NOPASSWD: ALL (lets root invoke the installer as homebrew_owner)
+//
+// Rules 2 and 3 are broader than day-to-day needs but safe on a headless lab
+// Mac: homebrew_owner has a random password and is not an interactive account.
+// Guest is explicitly denied regardless of group membership (last-match-wins).
 // The file is validated by visudo before being moved into place.
 func writeBrewSudoers(r *Runner, brewBinPath string) Result {
 	// sudo uses last-match-wins, so the Guest deny line must come after the
@@ -166,8 +171,14 @@ func writeBrewSudoers(r *Runner, brewBinPath string) Result {
 		"# Passwordless delegation: all local users → %s, brew binary only\n"+
 			"%%staff ALL=(%s) NOPASSWD: %s\n"+
 			"# Guest account must never bypass authentication.\n"+
-			"Guest  ALL=(%s) !ALL\n",
+			"Guest  ALL=(%s) !ALL\n"+
+			"# Allow %s to call sudo during Homebrew install and updates.\n"+
+			"%s ALL=(ALL) NOPASSWD: ALL\n"+
+			"# Allow root to invoke the Homebrew installer as %s.\n"+
+			"root   ALL=(%s) NOPASSWD: ALL\n",
 		brewUserName, brewUserName, brewBinPath, brewUserName,
+		brewUserName, brewUserName,
+		brewUserName, brewUserName,
 	)
 
 	if r.DryRun {
