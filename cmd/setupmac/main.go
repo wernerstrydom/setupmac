@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -27,6 +28,8 @@ func main() {
 	username := flag.String("username", "", "Username to configure for auto-login")
 	vncPassword := flag.String("vnc-password", "", "VNC password for ARD (omit to skip)")
 	skipFileVault := flag.Bool("skip-filevault", false, "Skip FileVault disable step")
+	githubKeysUser := flag.String("github-keys-user", "",
+		"GitHub username whose SSH keys are fetched and installed (prompt if omitted)")
 	flag.Parse()
 
 	if flag.NArg() > 0 {
@@ -50,6 +53,14 @@ func main() {
 
 	r := &setup.Runner{DryRun: *dryRun}
 	var all []setup.Result
+
+	// Resolve GitHub username for SSH key installation.
+	// Flag value takes precedence; if absent, prompt interactively on the TTY.
+	resolvedGitHubUser := *githubKeysUser
+	if resolvedGitHubUser == "" {
+		resolvedGitHubUser = promptGitHubUser()
+	}
+	keyUsers := collectKeyUsers(*username)
 
 	printSection("Power Management")
 	res := setup.ConfigurePower(r)
@@ -106,6 +117,39 @@ func main() {
 		printResult(warn)
 		all = append(all, warn)
 	}
+
+	printSection("SSH Keys")
+	var keysInstalled bool
+	if resolvedGitHubUser != "" {
+		for _, res := range setup.InstallGitHubKeys(r, resolvedGitHubUser, keyUsers) {
+			printResult(res)
+			all = append(all, res)
+			if res.Status == setup.OK {
+				keysInstalled = true
+			}
+		}
+	} else {
+		res := setup.SkipResult("ssh-keys", "no GitHub username provided")
+		printResult(res)
+		all = append(all, res)
+	}
+
+	printSection("SSH Hardening")
+	for _, res := range setup.HardenSSH(r, keysInstalled) {
+		printResult(res)
+		all = append(all, res)
+	}
+
+	printSection("Application Firewall")
+	for _, res := range setup.ConfigureFirewall(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
+	printSection("Siri")
+	res = setup.DisableSiri(r)
+	printResult(res)
+	all = append(all, res)
 
 	printSection("Homebrew (Multi-User)")
 	for _, res := range setup.SetupHomebrew(r, ver) {
@@ -212,4 +256,36 @@ func printSummary(results []setup.Result) {
 	}
 	fmt.Printf("\nSummary: %d OK, %d SKIP, %d FAIL\n",
 		counts[setup.OK], counts[setup.Skip], counts[setup.Fail])
+}
+
+// promptGitHubUser reads a GitHub username interactively from stdin.
+// Returns an empty string if the user presses Enter without input or if stdin
+// is not available. Mirrors the pattern used by DisableFileVault for passwords;
+// run.sh redirects stdin to /dev/tty so this works through curl-pipe installs.
+func promptGitHubUser() string {
+	fmt.Fprint(os.Stderr, "GitHub username for SSH keys (press Enter to skip): ")
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(line)
+}
+
+// collectKeyUsers builds the deduplicated list of local users who receive the
+// GitHub SSH keys: always root (emergency access), the sudo-invoking operator
+// ($SUDO_USER), and the --username auto-login user when provided.
+func collectKeyUsers(username string) []string {
+	seen := map[string]bool{}
+	var users []string
+	add := func(u string) {
+		if u != "" && !seen[u] {
+			seen[u] = true
+			users = append(users, u)
+		}
+	}
+	add("root")
+	add(os.Getenv("SUDO_USER"))
+	add(username)
+	return users
 }

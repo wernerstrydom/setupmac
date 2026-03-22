@@ -33,5 +33,14 @@ func DisableBluetoothAssistant(r *Runner) []Result {
 		results = append(results, OKResult("bluetooth-kill", "Killed BluetoothSetupAssistant"))
 	}
 
+	out, err = r.Run("defaults", "write",
+		"com.apple.NetworkBrowser", "DisableAirDrop", "-bool", "true",
+	)
+	if err != nil {
+		results = append(results, FailResult("airdrop", out, err))
+	} else {
+		results = append(results, OKResult("airdrop", "AirDrop disabled"))
+	}
+
 	return results
 }

@@ -16,12 +16,16 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 
 	results = append(results, verifyPower(r))
 	results = append(results, verifyBluetooth(r))
+	results = append(results, verifyAirDrop(r))
 	results = append(results, verifyUniversalControl(r, ver))
 	results = append(results, verifyScreenSaver(r))
 	results = append(results, verifyARD(r))
 	results = append(results, verifyFileVault(r))
 	results = append(results, verifyGuest(r))
 	results = append(results, verifyAutoLogin(r, username))
+	results = append(results, verifySSH())
+	results = append(results, verifyFirewall(r))
+	results = append(results, verifySIP(r))
 	results = append(results, verifyHomebrew())
 
 	return results
@@ -62,7 +66,7 @@ func verifyPower(r *Runner) Result {
 
 // parsePmsetValue finds a key in pmset -g output and returns its value.
 func parsePmsetValue(output, key string) (string, bool) {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		// pmset output lines look like: " sleep              0 (sleep prevented by..."
 		// or just "sleep 0"
@@ -200,4 +204,93 @@ func verifyHomebrew() Result {
 	}
 
 	return OKResult("verify-homebrew", "Homebrew")
+}
+
+func verifyAirDrop(r *Runner) Result {
+	out, err := r.Read("defaults", "read",
+		"com.apple.NetworkBrowser", "DisableAirDrop")
+	if err != nil || strings.TrimSpace(out) != "1" {
+		return FailResult("verify-airdrop",
+			fmt.Sprintf("DisableAirDrop=%q (want 1)", strings.TrimSpace(out)), err)
+	}
+	return OKResult("verify-airdrop", "AirDrop")
+}
+
+// verifySSH checks that the CIS-required directives are active in sshd_config.
+// It only checks directives that HardenSSH always writes; PasswordAuthentication
+// is omitted because it is conditional on GitHub key installation.
+func verifySSH() Result {
+	data, err := os.ReadFile(sshdConfigPath)
+	if err != nil {
+		return FailResult("verify-ssh",
+			fmt.Sprintf("read %s: %v", sshdConfigPath, err), err)
+	}
+
+	expected := map[string]string{
+		"PermitRootLogin":     "no",
+		"X11Forwarding":       "no",
+		"LogLevel":            "VERBOSE",
+		"ClientAliveInterval": "60",
+		"ClientAliveCountMax": "30",
+	}
+
+	config := string(data)
+	var mismatches []string
+	for key, want := range expected {
+		got, found := findSSHDirective(config, key)
+		if !found || got != want {
+			mismatches = append(mismatches, fmt.Sprintf("%s=%q (want %q)", key, got, want))
+		}
+	}
+
+	if len(mismatches) > 0 {
+		return FailResult("verify-ssh",
+			"unexpected sshd_config values: "+strings.Join(mismatches, ", "), nil)
+	}
+	return OKResult("verify-ssh", "SSH hardening")
+}
+
+// findSSHDirective returns the value of an active (non-commented) sshd_config
+// directive. The key comparison is case-insensitive to match sshd behaviour.
+func findSSHDirective(config, key string) (string, bool) {
+	for line := range strings.SplitSeq(config, "\n") {
+		s := strings.TrimLeft(line, " \t")
+		if s == "" || s[0] == '#' {
+			continue
+		}
+		fields := strings.Fields(s)
+		if len(fields) >= 2 && strings.EqualFold(fields[0], key) {
+			return fields[1], true
+		}
+	}
+	return "", false
+}
+
+func verifyFirewall(r *Runner) Result {
+	out, err := r.Read(socketfilterfw, "--getglobalstate")
+	if err != nil {
+		return FailResult("verify-firewall",
+			fmt.Sprintf("socketfilterfw --getglobalstate failed: %s", out), err)
+	}
+	if strings.Contains(out, "enabled") {
+		return OKResult("verify-firewall", "Application Firewall")
+	}
+	return FailResult("verify-firewall",
+		fmt.Sprintf("firewall not enabled: %s", strings.TrimSpace(out)), nil)
+}
+
+// verifySIP reports the System Integrity Protection status. SIP can only be
+// changed from Recovery Mode, so a disabled state is reported as a warning
+// rather than a hard failure — the operator must fix it outside setupmac.
+func verifySIP(r *Runner) Result {
+	out, err := r.Read("csrutil", "status")
+	if err != nil {
+		return FailResult("verify-sip",
+			fmt.Sprintf("csrutil status failed: %s", out), err)
+	}
+	if strings.Contains(out, "enabled") {
+		return OKResult("verify-sip", "SIP enabled")
+	}
+	return WarnResult("verify-sip",
+		"SIP is disabled — boot into Recovery Mode and run: csrutil enable")
 }
