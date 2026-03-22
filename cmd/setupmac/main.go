@@ -56,19 +56,13 @@ func main() {
 	r := &setup.Runner{DryRun: *dryRun}
 	var all []setup.Result
 
-	// Resolve GitHub username for SSH key installation.
-	// Flag value takes precedence; if absent, prompt interactively on the TTY.
-	resolvedGitHubUser := *githubKeysUser
-	if resolvedGitHubUser == "" {
-		resolvedGitHubUser = promptGitHubUser()
-	}
-	keyUsers := collectKeyUsers(*username)
-
-	// Resolve organization name for the login/SSH banner.
-	resolvedBannerOrg := *bannerOrg
-	if resolvedBannerOrg == "" {
-		resolvedBannerOrg = promptBannerOrg()
-	}
+	// Load previously saved answers so the operator can press Enter to accept
+	// them instead of retyping on every run. Passwords are never saved.
+	cfg := loadConfig()
+	resolvedUsername := resolveWithSaved(*username, cfg.Username, "Username for auto-login")
+	resolvedGitHubUser := resolveWithSaved(*githubKeysUser, cfg.GitHubKeysUser, "GitHub username for SSH keys")
+	resolvedBannerOrg := resolveWithSaved(*bannerOrg, cfg.BannerOrg, "Organization name for login banner")
+	keyUsers := collectKeyUsers(resolvedUsername)
 
 	printSection("Power Management")
 	res := setup.ConfigurePower(r)
@@ -113,13 +107,13 @@ func main() {
 	all = append(all, fvResult)
 
 	printSection("Auto-login")
-	autoResults := setup.EnableAutoLogin(r, *username)
+	autoResults := setup.EnableAutoLogin(r, resolvedUsername)
 	for _, res := range autoResults {
 		printResult(res)
 		all = append(all, res)
 	}
 	// Warn when auto-login was configured but FileVault may still be on.
-	if *username != "" && fvResult.Status == setup.Fail {
+	if resolvedUsername != "" && fvResult.Status == setup.Fail {
 		warn := setup.WarnResult("autologin-fv-warn",
 			"FileVault may still be enabled — auto-login requires FileVault off")
 		printResult(warn)
@@ -184,11 +178,17 @@ func main() {
 	fmt.Println("  using brew, so the wrapper at /opt/macsetup/brew is on PATH.")
 
 	printSection("Verification")
-	verResults := setup.VerifyAll(r, ver, *username)
+	verResults := setup.VerifyAll(r, ver, resolvedUsername)
 	for _, res := range verResults {
 		printResult(res)
 	}
 	all = append(all, verResults...)
+
+	saveConfig(savedConfig{
+		Username:       resolvedUsername,
+		GitHubKeysUser: resolvedGitHubUser,
+		BannerOrg:      resolvedBannerOrg,
+	})
 
 	printSummary(all)
 
@@ -281,30 +281,29 @@ func printSummary(results []setup.Result) {
 		counts[setup.OK], counts[setup.Skip], counts[setup.Fail])
 }
 
-// promptGitHubUser reads a GitHub username interactively from stdin.
-// Returns an empty string if the user presses Enter without input or if stdin
-// is not available. Mirrors the pattern used by DisableFileVault for passwords;
-// run.sh redirects stdin to /dev/tty so this works through curl-pipe installs.
-func promptGitHubUser() string {
-	fmt.Fprint(os.Stderr, "GitHub username for SSH keys (press Enter to skip): ")
+// resolveWithSaved returns flagVal when it is non-empty. Otherwise it prompts
+// interactively, displaying savedVal in brackets as the default — pressing
+// Enter accepts it. Returns the empty string to skip when nothing is entered
+// and there is no saved value. Mirrors the TTY pattern used by DisableFileVault.
+func resolveWithSaved(flagVal, savedVal, prompt string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if savedVal != "" {
+		fmt.Fprintf(os.Stderr, "%s [%s]: ", prompt, savedVal)
+	} else {
+		fmt.Fprintf(os.Stderr, "%s (Enter to skip): ", prompt)
+	}
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		return ""
+		return savedVal
 	}
-	return strings.TrimSpace(line)
-}
-
-// promptBannerOrg reads an organization name interactively from stdin for use
-// in the login/SSH banner. Returns empty string to skip if nothing is entered.
-func promptBannerOrg() string {
-	fmt.Fprint(os.Stderr, "Organization name for login banner (press Enter to skip): ")
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return ""
+	input := strings.TrimSpace(line)
+	if input == "" {
+		return savedVal
 	}
-	return strings.TrimSpace(line)
+	return input
 }
 
 // collectKeyUsers builds the deduplicated list of local users who receive the
