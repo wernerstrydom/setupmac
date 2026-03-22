@@ -249,13 +249,13 @@ func installHomebrew(r *Runner, prefix, bin string) []Result {
 			fmt.Sprintf("%s created and owned by %s", prefix, brewUserName)))
 	}
 
-	// su is always available to root without a password. We use it (not sudo)
-	// because the sudoers rule covers only the brew binary itself, not the
-	// installer shell script.
+	// sudo -H -u runs a command as another user without a password when the
+	// caller is root. su goes through PAM on macOS and can hang waiting for
+	// a password even when invoked by root, so we use sudo instead.
 	const installURL = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 	installCmd := fmt.Sprintf(`NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL %s)"`, installURL)
 
-	out, err := r.Run("su", "-", brewUserName, "-c", installCmd)
+	out, err := r.Run("sudo", "-H", "-u", brewUserName, "/bin/bash", "-c", installCmd)
 	if err != nil {
 		return append(results, FailResult("brew-install", out, err))
 	}
