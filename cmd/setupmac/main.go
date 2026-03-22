@@ -5,16 +5,24 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/wstrydom/setupmac/internal/macos"
 	"github.com/wstrydom/setupmac/internal/setup"
 )
 
-// version is overridden at build time via -ldflags "-X main.version=vX.Y.Z".
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+// commit, build time, and dirty flag are read from VCS info embedded
+// automatically by the Go toolchain (Go 1.18+).
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		printVersion()
+		return
+	}
+
 	dryRun := flag.Bool("dry-run", false, "Print commands without executing")
 	username := flag.String("username", "", "Username to configure for auto-login")
 	vncPassword := flag.String("vnc-password", "", "VNC password for ARD (omit to skip)")
@@ -158,6 +166,43 @@ func symbol(s setup.Status) string {
 	default:
 		return "-"
 	}
+}
+
+func printVersion() {
+	commit, buildTime, modified := vcsInfo()
+	fmt.Printf("setupmac %s\n", version)
+	fmt.Printf("  commit:  %s", commit)
+	if modified {
+		fmt.Print(" (modified)")
+	}
+	fmt.Println()
+	fmt.Printf("  built:   %s\n", buildTime)
+	fmt.Printf("  go:      %s\n", runtime.Version())
+	fmt.Printf("  arch:    %s\n", runtime.GOARCH)
+}
+
+// vcsInfo extracts the commit hash, build time, and dirty flag from the VCS
+// metadata that the Go toolchain embeds in every binary since Go 1.18.
+func vcsInfo() (commit, buildTime string, modified bool) {
+	commit, buildTime = "unknown", "unknown"
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			commit = s.Value
+			if len(commit) > 7 {
+				commit = commit[:7]
+			}
+		case "vcs.time":
+			buildTime = s.Value
+		case "vcs.modified":
+			modified = s.Value == "true"
+		}
+	}
+	return
 }
 
 func printSummary(results []setup.Result) {
