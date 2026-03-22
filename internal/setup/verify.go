@@ -46,7 +46,9 @@ func verifyPower(r *Runner) Result {
 	var mismatches []string
 	for key, want := range expected {
 		if got, ok := parsePmsetValue(out, key); !ok {
-			mismatches = append(mismatches, fmt.Sprintf("%s=<not found>", key))
+			// Some hardware (e.g. older Intel Mac Minis) doesn't expose every
+			// pmset key. Treat as absent rather than failed.
+			continue
 		} else if got != want {
 			mismatches = append(mismatches, fmt.Sprintf("%s=%s (want %s)", key, got, want))
 		}

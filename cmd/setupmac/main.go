@@ -97,7 +97,7 @@ func main() {
 	}
 
 	printSection("Homebrew (Multi-User)")
-	for _, res := range setup.SetupHomebrew(r) {
+	for _, res := range setup.SetupHomebrew(r, ver) {
 		printResult(res)
 		all = append(all, res)
 	}

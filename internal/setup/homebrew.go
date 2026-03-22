@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/wstrydom/setupmac/internal/macos"
 )
 
 const (
@@ -43,13 +45,13 @@ func brewBin() string {
 //
 // The wrapper calls the real brew by its fully qualified path, so it works
 // on both architectures without any circular reference.
-func SetupHomebrew(r *Runner) []Result {
+func SetupHomebrew(r *Runner, ver macos.Version) []Result {
 	prefix := BrewPrefix()
 	bin := brewBin()
 
 	var results []Result
 
-	res := createBrewUser(r)
+	res := createBrewUser(r, ver)
 	results = append(results, res)
 	if res.Status == Fail {
 		return results
@@ -70,7 +72,7 @@ func SetupHomebrew(r *Runner) []Result {
 
 // createBrewUser creates a hidden service account that owns the Homebrew
 // installation. If the account already exists the step is skipped.
-func createBrewUser(r *Runner) Result {
+func createBrewUser(r *Runner, ver macos.Version) Result {
 	if _, err := user.Lookup(brewUserName); err == nil {
 		return SkipResult("brew-user", fmt.Sprintf("user %q already exists", brewUserName))
 	}
@@ -82,26 +84,34 @@ func createBrewUser(r *Runner) Result {
 		return FailResult("brew-user", "failed to generate random password", err)
 	}
 
-	// sysadminctl and dscl are macOS-specific tools with no Go stdlib equivalent.
+	homeDir := "/var/" + brewUserName
+
+	// -home sets NFSHomeDirectory directly, avoiding a separate dscl call
+	// that would fail with eDSPermissionError on macOS 13+.
 	if out, err := r.Run("sysadminctl",
 		"-addUser", brewUserName,
 		"-fullName", brewUserDesc,
 		"-password", password,
+		"-home", homeDir,
 	); err != nil {
 		return FailResult("brew-user", out, err)
 	}
 
-	// Hide the account from the login screen and System Settings.
-	if out, err := r.Run("dscl", ".", "-create",
-		"/Users/"+brewUserName, "IsHidden", "1"); err != nil {
-		return FailResult("brew-user", out, err)
-	}
-
-	homeDir := "/var/" + brewUserName
-
-	if out, err := r.Run("dscl", ".", "-create",
-		"/Users/"+brewUserName, "NFSHomeDirectory", homeDir); err != nil {
-		return FailResult("brew-user", out, err)
+	// macOS 13+ (Ventura and later) rejects dscl writes to IsHidden with
+	// eDSPermissionError. Use the loginwindow plist instead, which works on
+	// all supported macOS versions. On older macOS, dscl IsHidden is still
+	// the canonical mechanism.
+	if ver.AtLeast(13, 0) {
+		if out, err := r.Run("defaults", "write",
+			"/Library/Preferences/com.apple.loginwindow",
+			"HiddenUsersList", "-array-add", brewUserName); err != nil {
+			return FailResult("brew-user", out, err)
+		}
+	} else {
+		if out, err := r.Run("dscl", ".", "-create",
+			"/Users/"+brewUserName, "IsHidden", "1"); err != nil {
+			return FailResult("brew-user", out, err)
+		}
 	}
 
 	if !r.DryRun {

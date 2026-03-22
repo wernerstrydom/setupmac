@@ -1,10 +1,10 @@
 package setup
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
+
+	"golang.org/x/term"
 )
 
 // kcpasswordKey is the XOR key macOS uses to obfuscate /etc/kcpassword.
@@ -39,12 +39,13 @@ func EnableAutoLogin(r *Runner, username string) []Result {
 	}
 
 	fmt.Fprintf(os.Stderr, "Enter login password for %s: ", username)
-	password, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		results = append(results, FailResult("autologin-kcpassword", "failed to read password from stdin", err))
+		results = append(results, FailResult("autologin-kcpassword", "failed to read password", err))
 		return results
 	}
-	password = strings.TrimRight(password, "\r\n")
+	password := string(passwordBytes)
 
 	encoded := encodeKCPassword(password)
 	if err := os.WriteFile("/etc/kcpassword", encoded, 0600); err != nil {

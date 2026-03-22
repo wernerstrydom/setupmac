@@ -1,10 +1,11 @@
 package setup
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // DisableFileVault checks FileVault status and disables it if active.
@@ -32,11 +33,12 @@ func DisableFileVault(r *Runner) Result {
 	}
 
 	fmt.Fprint(os.Stderr, "FileVault is enabled. Enter administrator password to disable: ")
-	password, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return FailResult("filevault", "failed to read password from stdin", err)
+		return FailResult("filevault", "failed to read password", err)
 	}
-	password = strings.TrimRight(password, "\r\n")
+	password := string(passwordBytes)
 
 	out, err := r.RunWithStdin(password, "fdesetup", "disable")
 	if err != nil {
