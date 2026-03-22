@@ -30,6 +30,8 @@ func main() {
 	skipFileVault := flag.Bool("skip-filevault", false, "Skip FileVault disable step")
 	githubKeysUser := flag.String("github-keys-user", "",
 		"GitHub username whose SSH keys are fetched and installed (prompt if omitted)")
+	bannerOrg := flag.String("banner-org", "",
+		"Organization name for the login/SSH banner (prompt if omitted)")
 	flag.Parse()
 
 	if flag.NArg() > 0 {
@@ -61,6 +63,12 @@ func main() {
 		resolvedGitHubUser = promptGitHubUser()
 	}
 	keyUsers := collectKeyUsers(*username)
+
+	// Resolve organization name for the login/SSH banner.
+	resolvedBannerOrg := *bannerOrg
+	if resolvedBannerOrg == "" {
+		resolvedBannerOrg = promptBannerOrg()
+	}
 
 	printSection("Power Management")
 	res := setup.ConfigurePower(r)
@@ -118,6 +126,21 @@ func main() {
 		all = append(all, warn)
 	}
 
+	printSection("Login Banner")
+	bannerFile := ""
+	if resolvedBannerOrg != "" {
+		var bannerResults []setup.Result
+		bannerFile, bannerResults = setup.SetupBanner(r, resolvedBannerOrg)
+		for _, res := range bannerResults {
+			printResult(res)
+			all = append(all, res)
+		}
+	} else {
+		res := setup.SkipResult("banner", "no organization name provided")
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("SSH Keys")
 	var keysInstalled bool
 	if resolvedGitHubUser != "" {
@@ -135,7 +158,7 @@ func main() {
 	}
 
 	printSection("SSH Hardening")
-	for _, res := range setup.HardenSSH(r, keysInstalled) {
+	for _, res := range setup.HardenSSH(r, keysInstalled, bannerFile) {
 		printResult(res)
 		all = append(all, res)
 	}
@@ -264,6 +287,18 @@ func printSummary(results []setup.Result) {
 // run.sh redirects stdin to /dev/tty so this works through curl-pipe installs.
 func promptGitHubUser() string {
 	fmt.Fprint(os.Stderr, "GitHub username for SSH keys (press Enter to skip): ")
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(line)
+}
+
+// promptBannerOrg reads an organization name interactively from stdin for use
+// in the login/SSH banner. Returns empty string to skip if nothing is entered.
+func promptBannerOrg() string {
+	fmt.Fprint(os.Stderr, "Organization name for login banner (press Enter to skip): ")
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {

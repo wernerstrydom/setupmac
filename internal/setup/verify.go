@@ -23,6 +23,7 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 	results = append(results, verifyFileVault(r))
 	results = append(results, verifyGuest(r))
 	results = append(results, verifyAutoLogin(r, username))
+	results = append(results, verifyBanner())
 	results = append(results, verifySSH())
 	results = append(results, verifyFirewall(r))
 	results = append(results, verifySIP(r))
@@ -204,6 +205,14 @@ func verifyHomebrew() Result {
 	}
 
 	return OKResult("verify-homebrew", "Homebrew")
+}
+
+func verifyBanner() Result {
+	if _, err := os.Stat(sshBannerPath); err != nil {
+		return WarnResult("verify-banner",
+			sshBannerPath+" not found — run with --banner-org to configure")
+	}
+	return OKResult("verify-banner", "Login banner")
 }
 
 func verifyAirDrop(r *Runner) Result {

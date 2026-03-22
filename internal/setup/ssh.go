@@ -27,7 +27,7 @@ const sshdConfigPath = "/etc/ssh/sshd_config"
 //
 // No daemon reload is needed: macOS launchd spawns a new sshd process per
 // connection, so the next login picks up the new config automatically.
-func HardenSSH(r *Runner, disablePasswordAuth bool) []Result {
+func HardenSSH(r *Runner, disablePasswordAuth bool, bannerFile string) []Result {
 	directives := map[string]string{
 		"PermitRootLogin":     "no",
 		"X11Forwarding":       "no",
@@ -37,6 +37,9 @@ func HardenSSH(r *Runner, disablePasswordAuth bool) []Result {
 	}
 	if disablePasswordAuth {
 		directives["PasswordAuthentication"] = "no"
+	}
+	if bannerFile != "" {
+		directives["Banner"] = bannerFile
 	}
 
 	if r.DryRun {
