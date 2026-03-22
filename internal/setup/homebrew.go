@@ -260,15 +260,15 @@ func installHomebrew(r *Runner, prefix, bin string) []Result {
 			fmt.Sprintf("%s created and owned by %s", prefix, brewUserName)))
 	}
 
-	// sudo -H -u runs a command as another user without a password when the
-	// caller is root. su goes through PAM on macOS and can hang waiting for
-	// a password even when invoked by root, so we use sudo instead.
+	// RunLive streams output directly to the terminal. The Homebrew installer
+	// produces megabytes of output; using Run (CombinedOutput) would fill the
+	// OS pipe buffer and deadlock. sudo -n fails immediately if NOPASSWD is
+	// not in effect, rather than hanging on a password prompt.
 	const installURL = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 	installCmd := fmt.Sprintf(`NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL %s)"`, installURL)
 
-	out, err := r.Run("sudo", "-H", "-u", brewUserName, "/bin/bash", "-c", installCmd)
-	if err != nil {
-		return append(results, FailResult("brew-install", out, err))
+	if err := r.RunLive("sudo", "-n", "-H", "-u", brewUserName, "/bin/bash", "-c", installCmd); err != nil {
+		return append(results, FailResult("brew-install", "Homebrew installer failed", err))
 	}
 	return append(results, OKResult("brew-install", "Homebrew installed at "+bin))
 }

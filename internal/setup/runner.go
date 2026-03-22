@@ -77,6 +77,23 @@ func (r *Runner) RunWithStdin(input, name string, args ...string) (string, error
 	return strings.TrimSpace(buf.String()), err
 }
 
+// RunLive executes a long-running command, streaming stdout and stderr directly
+// to the terminal instead of buffering. Use this for commands that produce
+// large amounts of output (e.g. the Homebrew installer) to avoid the pipe
+// buffer deadlock that occurs when CombinedOutput blocks waiting for a process
+// that is itself blocked trying to write to a full pipe.
+func (r *Runner) RunLive(name string, args ...string) error {
+	if r.DryRun {
+		fmt.Printf("  [dry-run] %s %s\n", name, strings.Join(args, " "))
+		return nil
+	}
+	cmd := exec.Command(name, args...)
+	cmd.Env = os.Environ()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // Read executes a read-only command, always running even in dry-run mode.
 // Used by verify.go to check current state.
 func (r *Runner) Read(name string, args ...string) (string, error) {
