@@ -64,14 +64,28 @@ without any extra configuration.
 /opt/macsetup/brew  →  sudo -H -u homebrew_owner /real/path/to/brew "$@"
 ```
 
-`/opt/macsetup` is placed first in `PATH` via `/etc/zshenv` and
-`/etc/paths.d/00-macsetup`. The sudoers drop-in at
-`/etc/sudoers.d/homebrew-multiuser` makes this passwordless for all local
-users. The Guest account is explicitly denied.
+`/opt/macsetup` is placed first in `PATH` by appending an `export PATH` line
+to `/etc/zprofile` after macOS's `path_helper` call. This ensures the wrapper
+takes precedence over the real `brew` binary on both Intel (`/usr/local/bin`)
+and Apple Silicon (`/opt/homebrew/bin`). `/etc/paths.d/00-macsetup` is also
+written as a belt-and-suspenders measure.
+
+The sudoers drop-in at `/etc/sudoers.d/homebrew-multiuser` grants:
+
+| Rule | Purpose |
+|---|---|
+| `%staff → homebrew_owner NOPASSWD: /brew` | Any local user can run `brew` without a password |
+| `homebrew_owner → ALL NOPASSWD: ALL` | Homebrew installer calls `sudo` internally |
+| `root → homebrew_owner NOPASSWD: ALL` | setupmac runs the installer as `homebrew_owner` |
+
+The Guest account is explicitly denied regardless of group membership.
+
+> **After setup**: PATH changes take effect in new shells only. Run
+> `source /etc/zprofile` or open a new terminal before using `brew`.
 
 ## Building from source
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ```bash
 git clone https://github.com/wernerstrydom/setupmac.git
@@ -102,6 +116,6 @@ Push a version tag to trigger the release workflow. Binaries for both
 published automatically with SHA-256 checksums.
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
