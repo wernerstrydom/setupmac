@@ -57,6 +57,14 @@ func SetupHomebrew(r *Runner, ver macos.Version) []Result {
 		return results
 	}
 
+	// Always run, even if createBrewUser was skipped — the user may have been
+	// created in a previous run without the -admin flag.
+	res = ensureBrewUserAdmin(r)
+	results = append(results, res)
+	if res.Status == Fail {
+		return results
+	}
+
 	res = writeBrewSudoers(r, bin)
 	results = append(results, res)
 	if res.Status == Fail {
@@ -88,11 +96,13 @@ func createBrewUser(r *Runner, ver macos.Version) Result {
 
 	// -home sets NFSHomeDirectory directly, avoiding a separate dscl call
 	// that would fail with eDSPermissionError on macOS 13+.
+	// -admin is required so the Homebrew installer can verify sudo access.
 	if out, err := r.Run("sysadminctl",
 		"-addUser", brewUserName,
 		"-fullName", brewUserDesc,
 		"-password", password,
 		"-home", homeDir,
+		"-admin",
 	); err != nil {
 		return FailResult("brew-user", out, err)
 	}
@@ -126,6 +136,22 @@ func createBrewUser(r *Runner, ver macos.Version) Result {
 	}
 
 	return OKResult("brew-user", fmt.Sprintf("created hidden service user %q", brewUserName))
+}
+
+// ensureBrewUserAdmin adds homebrew_owner to the admin group if it is not
+// already a member. Admin membership is required by the Homebrew installer,
+// which validates sudo access before proceeding.
+func ensureBrewUserAdmin(r *Runner) Result {
+	// dseditgroup exits 0 when the user is already a member.
+	if _, err := r.Read("dseditgroup", "-o", "checkmember", "-m", brewUserName, "admin"); err == nil {
+		return SkipResult("brew-user-admin", fmt.Sprintf("user %q is already in the admin group", brewUserName))
+	}
+
+	out, err := r.Run("dseditgroup", "-o", "edit", "-a", brewUserName, "-t", "user", "admin")
+	if err != nil {
+		return FailResult("brew-user-admin", out, err)
+	}
+	return OKResult("brew-user-admin", fmt.Sprintf("added %q to admin group", brewUserName))
 }
 
 // writeBrewSudoers writes /etc/sudoers.d/homebrew-multiuser, granting all
