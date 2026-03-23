@@ -9,6 +9,8 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/wstrydom/setupmac/internal/macos"
 	"github.com/wstrydom/setupmac/internal/setup"
 )
@@ -56,13 +58,16 @@ func main() {
 	r := &setup.Runner{DryRun: *dryRun}
 	var all []setup.Result
 
-	// Load previously saved answers so the operator can press Enter to accept
-	// them instead of retyping on every run. Passwords are never saved.
+	// Phase 1: inspect the host so we only ask questions that are relevant.
+	fmt.Fprintln(os.Stderr, "Inspecting host...")
+	state := setup.Inspect(r)
+
+	// Phase 2: collect all user input upfront — no prompts during execution.
 	cfg := loadConfig()
-	resolvedUsername := resolveWithSaved(*username, cfg.Username, "Username for auto-login")
-	resolvedGitHubUser := resolveWithSaved(*githubKeysUser, cfg.GitHubKeysUser, "GitHub username for SSH keys")
-	resolvedBannerOrg := resolveWithSaved(*bannerOrg, cfg.BannerOrg, "Organization name for login banner")
-	keyUsers := collectKeyUsers(resolvedUsername)
+	plan := gatherInputs(*dryRun, *skipFileVault, *username, *githubKeysUser, *bannerOrg, cfg, state)
+	keyUsers := collectKeyUsers(plan.Username)
+
+	fmt.Fprintln(os.Stderr)
 
 	printSection("Power Management")
 	res := setup.ConfigurePower(r)
@@ -101,19 +106,19 @@ func main() {
 	if *skipFileVault {
 		fvResult = setup.SkipResult("filevault", "--skip-filevault flag set")
 	} else {
-		fvResult = setup.DisableFileVault(r)
+		fvResult = setup.DisableFileVault(r, plan.FileVaultPassword)
 	}
 	printResult(fvResult)
 	all = append(all, fvResult)
 
 	printSection("Auto-login")
-	autoResults := setup.EnableAutoLogin(r, resolvedUsername)
+	autoResults := setup.EnableAutoLogin(r, plan.Username, plan.AutoLoginPassword)
 	for _, res := range autoResults {
 		printResult(res)
 		all = append(all, res)
 	}
 	// Warn when auto-login was configured but FileVault may still be on.
-	if resolvedUsername != "" && fvResult.Status == setup.Fail {
+	if plan.Username != "" && fvResult.Status == setup.Fail {
 		warn := setup.WarnResult("autologin-fv-warn",
 			"FileVault may still be enabled — auto-login requires FileVault off")
 		printResult(warn)
@@ -122,9 +127,9 @@ func main() {
 
 	printSection("Login Banner")
 	bannerFile := ""
-	if resolvedBannerOrg != "" {
+	if plan.BannerOrg != "" {
 		var bannerResults []setup.Result
-		bannerFile, bannerResults = setup.SetupBanner(r, resolvedBannerOrg)
+		bannerFile, bannerResults = setup.SetupBanner(r, plan.BannerOrg)
 		for _, res := range bannerResults {
 			printResult(res)
 			all = append(all, res)
@@ -137,8 +142,8 @@ func main() {
 
 	printSection("SSH Keys")
 	var keysInstalled bool
-	if resolvedGitHubUser != "" {
-		for _, res := range setup.InstallGitHubKeys(r, resolvedGitHubUser, keyUsers) {
+	if plan.GitHubKeysUser != "" {
+		for _, res := range setup.InstallGitHubKeys(r, plan.GitHubKeysUser, keyUsers) {
 			printResult(res)
 			all = append(all, res)
 			if res.Status == setup.OK {
@@ -178,16 +183,16 @@ func main() {
 	fmt.Println("  using brew, so the wrapper at /opt/macsetup/brew is on PATH.")
 
 	printSection("Verification")
-	verResults := setup.VerifyAll(r, ver, resolvedUsername)
+	verResults := setup.VerifyAll(r, ver, plan.Username)
 	for _, res := range verResults {
 		printResult(res)
 	}
 	all = append(all, verResults...)
 
 	saveConfig(savedConfig{
-		Username:       resolvedUsername,
-		GitHubKeysUser: resolvedGitHubUser,
-		BannerOrg:      resolvedBannerOrg,
+		Username:       plan.Username,
+		GitHubKeysUser: plan.GitHubKeysUser,
+		BannerOrg:      plan.BannerOrg,
 	})
 
 	printSummary(all)
@@ -281,10 +286,47 @@ func printSummary(results []setup.Result) {
 		counts[setup.OK], counts[setup.Skip], counts[setup.Fail])
 }
 
+// setupPlan holds all user-supplied inputs collected before execution begins.
+// Passwords are not saved to the config file.
+type setupPlan struct {
+	Username          string
+	GitHubKeysUser    string
+	BannerOrg         string
+	FileVaultPassword string // non-empty only when FileVault is currently on
+	AutoLoginPassword string // non-empty only when a (new) password is needed
+}
+
+// gatherInputs inspects the host state and collects all required inputs
+// upfront so that no prompts interrupt execution.
+func gatherInputs(dryRun, skipFileVault bool, username, githubKeysUser, bannerOrg string, cfg savedConfig, state setup.HostState) setupPlan {
+	var plan setupPlan
+
+	plan.Username = resolveWithSaved(username, cfg.Username, "Username for auto-login")
+	plan.GitHubKeysUser = resolveWithSaved(githubKeysUser, cfg.GitHubKeysUser, "GitHub username for SSH keys")
+	plan.BannerOrg = resolveWithSaved(bannerOrg, cfg.BannerOrg, "Organization name for login banner")
+
+	if !skipFileVault && state.FileVaultEnabled && !dryRun {
+		plan.FileVaultPassword = promptPassword("FileVault is enabled. Enter administrator password to disable")
+	}
+
+	if plan.Username != "" && !dryRun {
+		alreadyConfigured := state.AutoLoginUser == plan.Username && state.KCPasswordExists
+		if alreadyConfigured {
+			if confirmYN(fmt.Sprintf("Auto-login already configured for %s. Update password?", plan.Username), false) {
+				plan.AutoLoginPassword = promptPassword("Enter new login password for " + plan.Username)
+			}
+		} else {
+			plan.AutoLoginPassword = promptPassword("Enter login password for " + plan.Username)
+		}
+	}
+
+	return plan
+}
+
 // resolveWithSaved returns flagVal when it is non-empty. Otherwise it prompts
 // interactively, displaying savedVal in brackets as the default — pressing
 // Enter accepts it. Returns the empty string to skip when nothing is entered
-// and there is no saved value. Mirrors the TTY pattern used by DisableFileVault.
+// and there is no saved value.
 func resolveWithSaved(flagVal, savedVal, prompt string) string {
 	if flagVal != "" {
 		return flagVal
@@ -304,6 +346,31 @@ func resolveWithSaved(flagVal, savedVal, prompt string) string {
 		return savedVal
 	}
 	return input
+}
+
+// confirmYN prints a yes/no prompt and returns true if the operator answers y.
+// defaultYes controls what an empty (Enter) response means.
+func confirmYN(question string, defaultYes bool) bool {
+	choices := "[y/N]"
+	if defaultYes {
+		choices = "[Y/n]"
+	}
+	fmt.Fprintf(os.Stderr, "%s %s: ", question, choices)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	if answer == "" {
+		return defaultYes
+	}
+	return answer == "y" || answer == "yes"
+}
+
+// promptPassword writes prompt to stderr, reads a password without echo,
+// and returns it. Returns empty string on any read error.
+func promptPassword(prompt string) string {
+	fmt.Fprintf(os.Stderr, "%s: ", prompt)
+	pwd, _ := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
+	return string(pwd)
 }
 
 // collectKeyUsers builds the deduplicated list of local users who receive the
