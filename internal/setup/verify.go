@@ -28,6 +28,8 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 	results = append(results, verifyFirewall(r))
 	results = append(results, verifySIP(r))
 	results = append(results, verifyHomebrew())
+	results = append(results, verifyNTP(r))
+	results = append(results, verifyAutoUpdates(r))
 
 	return results
 }
@@ -286,6 +288,26 @@ func verifyFirewall(r *Runner) Result {
 	}
 	return FailResult("verify-firewall",
 		fmt.Sprintf("firewall not enabled: %s", strings.TrimSpace(out)), nil)
+}
+
+func verifyNTP(r *Runner) Result {
+	out, err := r.Read("systemsetup", "-getusingnetworktime")
+	if err != nil {
+		return FailResult("verify-ntp", fmt.Sprintf("systemsetup -getusingnetworktime failed: %s", out), err)
+	}
+	if strings.Contains(out, "On") {
+		return OKResult("verify-ntp", "NTP")
+	}
+	return FailResult("verify-ntp", fmt.Sprintf("network time not enabled: %s", strings.TrimSpace(out)), nil)
+}
+
+func verifyAutoUpdates(r *Runner) Result {
+	out, err := r.Read("defaults", "read", "com.apple.SoftwareUpdate", "AutomaticCheckEnabled")
+	if err != nil || strings.TrimSpace(out) != "1" {
+		return FailResult("verify-auto-updates",
+			fmt.Sprintf("AutomaticCheckEnabled=%q (want 1)", strings.TrimSpace(out)), err)
+	}
+	return OKResult("verify-auto-updates", "Auto-updates")
 }
 
 // verifySIP reports the System Integrity Protection status. SIP can only be

@@ -18,4 +18,5 @@ coverage.txt
 
 # Temporary / scratch work
 scratchpad/
+.scratchpad/
 tmp/

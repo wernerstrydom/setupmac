@@ -74,6 +74,12 @@ func main() {
 	printResult(res)
 	all = append(all, res)
 
+	printSection("Time Sync")
+	for _, res := range setup.ConfigureTimeSync(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("Bluetooth Setup Assistant")
 	for _, res := range setup.DisableBluetoothAssistant(r) {
 		printResult(res)
@@ -173,6 +179,12 @@ func main() {
 	printResult(res)
 	all = append(all, res)
 
+	printSection("Auto Updates")
+	for _, res := range setup.ConfigureAutoUpdates(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("Homebrew (Multi-User)")
 	for _, res := range setup.SetupHomebrew(r, ver) {
 		printResult(res)
@@ -181,6 +193,18 @@ func main() {
 	fmt.Println()
 	fmt.Println("  NOTE: open a new terminal (or run: source /etc/zprofile) before")
 	fmt.Println("  using brew, so the wrapper at /opt/macsetup/brew is on PATH.")
+
+	printSection("Dev Tools")
+	for _, res := range setup.InstallDevTools(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
+	printSection("Shell Setup")
+	for _, res := range setup.ConfigureShell(r, keyUsers) {
+		printResult(res)
+		all = append(all, res)
+	}
 
 	printSection("Verification")
 	verResults := setup.VerifyAll(r, ver, plan.Username)
