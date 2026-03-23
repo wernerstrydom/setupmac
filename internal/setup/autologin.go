@@ -36,8 +36,7 @@ func EnableAutoLogin(r *Runner, username string) []Result {
 				fmt.Sprintf("auto-login already configured for %s (dry-run)", username))}
 		}
 		if !confirmYN(fmt.Sprintf("Auto-login already configured for %s. Update password?", username), false) {
-			return []Result{SkipResult("autologin",
-				fmt.Sprintf("auto-login already configured for %s", username))}
+			return []Result{SkipResult("autologin", "unchanged")}
 		}
 		// Operator confirmed — re-write password only; plist is already correct.
 		return []Result{writeKCPassword(username)}
