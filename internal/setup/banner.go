@@ -7,7 +7,6 @@ import (
 
 const (
 	sshBannerPath   = "/etc/ssh/banner"
-	motdPath        = "/etc/motd"
 	loginBannerDir  = "/Library/Security"
 	loginBannerPath = "/Library/Security/PolicyBanner.txt"
 )
@@ -24,8 +23,11 @@ Disconnect immediately if you are not an authorized user.
 
 // SetupBanner writes a standard authorized-use-only notice to:
 //   - /etc/ssh/banner        (SSH pre-authentication banner)
-//   - /etc/motd              (message of the day, shown after login)
-//   - /Library/Security/PolicyBanner.txt  (macOS login window notice)
+//   - /Library/Security/PolicyBanner.txt  (macOS login window / ARD notice)
+//
+// /etc/motd is intentionally not used: the pre-auth SSH banner already covers
+// the legal notice requirement, and writing the same text to /etc/motd causes
+// it to be displayed twice in every SSH session.
 //
 // The SSH banner path is returned so the caller can pass it to HardenSSH,
 // which sets the Banner directive in sshd_config. An empty string is returned
@@ -35,7 +37,6 @@ func SetupBanner(r *Runner, orgName string) (string, []Result) {
 
 	if r.DryRun {
 		fmt.Printf("  [dry-run] write %s\n", sshBannerPath)
-		fmt.Printf("  [dry-run] write %s\n", motdPath)
 		fmt.Printf("  [dry-run] write %s\n", loginBannerPath)
 		return sshBannerPath, []Result{OKResult("banner",
 			fmt.Sprintf("would write login banner for %q (dry-run)", orgName))}
@@ -44,11 +45,6 @@ func SetupBanner(r *Runner, orgName string) (string, []Result) {
 	if err := os.WriteFile(sshBannerPath, []byte(text), 0644); err != nil {
 		return "", []Result{FailResult("banner",
 			fmt.Sprintf("write %s: %v", sshBannerPath, err), err)}
-	}
-
-	if err := os.WriteFile(motdPath, []byte(text), 0644); err != nil {
-		return "", []Result{FailResult("banner",
-			fmt.Sprintf("write %s: %v", motdPath, err), err)}
 	}
 
 	if err := os.MkdirAll(loginBannerDir, 0755); err != nil {
