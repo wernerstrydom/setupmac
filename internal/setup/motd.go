@@ -53,25 +53,37 @@ IPS=$(ifconfig \
          {print $2, "(" iface ")"}' \
   | awk 'NR==1 {print; next} {printf "           %s\n", $0}')
 
-# Software updates: refresh the list in the background every hour so this
-# script never blocks waiting for Apple's servers. On the first run the cache
-# will not exist yet, so "checking..." is shown until the background job writes
-# it. The next 5-minute tick will display the real count.
-UPDATE_CACHE=/var/run/update-motd-sw-updates
-UPDATE_TTL=3600
+# Update checks run in the background and cache results for 1 hour so this
+# script never blocks on network calls. On the very first run caches won't
+# exist yet; the next 5-minute tick will show real counts.
 NOW=$(date +%s)
-CACHE_AGE=$(( NOW - $(stat -f %m "$UPDATE_CACHE" 2>/dev/null || echo 0) ))
-if [ ! -f "$UPDATE_CACHE" ] || [ "$CACHE_AGE" -gt "$UPDATE_TTL" ]; then
-    softwareupdate -l > "$UPDATE_CACHE" 2>&1 &
+TTL=3600
+
+SW_CACHE=/var/run/update-motd-sw-updates
+SW_AGE=$(( NOW - $(stat -f %m "$SW_CACHE" 2>/dev/null || echo 0) ))
+if [ ! -f "$SW_CACHE" ] || [ "$SW_AGE" -gt "$TTL" ]; then
+    softwareupdate -l > "$SW_CACHE" 2>&1 &
 fi
-# Only set UPDATES when action is required. Security patches install
-# automatically; this catches anything the auto-updater does not cover
-# (non-critical updates, major OS upgrades listed separately by Apple).
-UPDATES=""
-if [ -f "$UPDATE_CACHE" ]; then
-    UPDATE_COUNT=$(grep -c '^\*' "$UPDATE_CACHE" 2>/dev/null || true)
-    if [ "${UPDATE_COUNT:-0}" -gt 0 ]; then
-        UPDATES="  Updates: ${UPDATE_COUNT} pending — run: sudo softwareupdate -ia"
+
+BREW_CACHE=/var/run/update-motd-brew-outdated
+BREW_AGE=$(( NOW - $(stat -f %m "$BREW_CACHE" 2>/dev/null || echo 0) ))
+if [ ! -f "$BREW_CACHE" ] || [ "$BREW_AGE" -gt "$TTL" ]; then
+    /opt/macsetup/brew outdated --greedy > "$BREW_CACHE" 2>&1 &
+fi
+
+OS_UPDATES=""
+if [ -f "$SW_CACHE" ]; then
+    SW_COUNT=$(grep -c '^\*' "$SW_CACHE" 2>/dev/null || true)
+    if [ "${SW_COUNT:-0}" -gt 0 ]; then
+        OS_UPDATES="  OS:      ${SW_COUNT} update(s) — run: sudo softwareupdate -ia"
+    fi
+fi
+
+BREW_UPDATES=""
+if [ -f "$BREW_CACHE" ]; then
+    BREW_COUNT=$(grep -c '.' "$BREW_CACHE" 2>/dev/null || true)
+    if [ "${BREW_COUNT:-0}" -gt 0 ]; then
+        BREW_UPDATES="  Brew:    ${BREW_COUNT} outdated — run: brew upgrade --greedy"
     fi
 fi
 
@@ -90,7 +102,8 @@ ${SEP}
   Memory:  ${MEM_USED} used / ${MEM_TOTAL} total
   Disk:    ${DISK} (/)
   IP:      ${IPS}
-${UPDATES}
+${OS_UPDATES}
+${BREW_UPDATES}
 ${SEP}
 
 MOTD
