@@ -53,10 +53,11 @@ IPS=$(ifconfig \
          {print $2, "(" iface ")"}' \
   | awk 'NR==1 {print; next} {printf "           %s\n", $0}')
 
-SEP=$(printf '\xe2\x94\x80%.0s' $(seq 1 $(echo -n "$HOSTNAME" | wc -c | tr -d ' ')))
+SEP=$(printf '=%.0s' {1..51})
 
 cat > /etc/motd << MOTD
 
+${SEP}
 ${HOSTNAME}
 ${SEP}
   OS:      ${OS_NAME} ${OS_VER} (${ARCH})
@@ -66,6 +67,7 @@ ${SEP}
   Memory:  ${MEM_USED} used / ${MEM_TOTAL} total
   Disk:    ${DISK} (/)
   IP:      ${IPS}
+${SEP}
 
 MOTD
 `
