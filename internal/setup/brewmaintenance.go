@@ -21,9 +21,9 @@ BREW=/opt/macsetup/brew
 LOG=/var/log/brew-maintenance.log
 
 echo "$(date): starting brew maintenance" >> "$LOG"
-"$BREW" update  >> "$LOG" 2>&1
-"$BREW" upgrade >> "$LOG" 2>&1
-"$BREW" cleanup >> "$LOG" 2>&1
+"$BREW" update          >> "$LOG" 2>&1
+"$BREW" upgrade --greedy >> "$LOG" 2>&1
+"$BREW" cleanup         >> "$LOG" 2>&1
 echo "$(date): brew maintenance complete" >> "$LOG"
 `
 
