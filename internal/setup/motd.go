@@ -75,7 +75,7 @@ OS_UPDATES=""
 if [ -f "$SW_CACHE" ]; then
     SW_COUNT=$(grep -c '^\*' "$SW_CACHE" 2>/dev/null || true)
     if [ "${SW_COUNT:-0}" -gt 0 ]; then
-        OS_UPDATES="  OS:      ${SW_COUNT} update(s) — run: sudo softwareupdate -ia"
+        OS_UPDATES="macOS has ${SW_COUNT} update(s)  (sudo softwareupdate -ia)"
     fi
 fi
 
@@ -83,7 +83,7 @@ BREW_UPDATES=""
 if [ -f "$BREW_CACHE" ]; then
     BREW_COUNT=$(grep -c '.' "$BREW_CACHE" 2>/dev/null || true)
     if [ "${BREW_COUNT:-0}" -gt 0 ]; then
-        BREW_UPDATES="  Brew:    ${BREW_COUNT} outdated — run: brew upgrade --greedy"
+        BREW_UPDATES="brew has ${BREW_COUNT} update(s)  (brew upgrade --greedy)"
     fi
 fi
 
@@ -102,9 +102,9 @@ ${SEP}
   Memory:  ${MEM_USED} used / ${MEM_TOTAL} total
   Disk:    ${DISK} (/)
   IP:      ${IPS}
-${OS_UPDATES}
-${BREW_UPDATES}
 ${SEP}
+${BREW_UPDATES}
+${OS_UPDATES}
 
 MOTD
 `
