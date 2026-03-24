@@ -12,8 +12,8 @@ const (
 // It delegates to homebrew_owner via the existing brew wrapper so no special
 // credentials are needed beyond what the sudoers drop-in already grants.
 const brewMaintenanceScript = `#!/bin/bash
-# brew-maintenance — weekly update, upgrade, and cleanup.
-# Managed by setupmac; runs via launchd every Sunday at 03:00.
+# brew-maintenance — daily update, upgrade, and cleanup.
+# Managed by setupmac; runs via launchd every day at 03:00.
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ echo "$(date): starting brew maintenance" >> "$LOG"
 echo "$(date): brew maintenance complete" >> "$LOG"
 `
 
-// brewMaintenancePlist runs brew-maintenance every Sunday at 03:00.
+// brewMaintenancePlist runs brew-maintenance daily at 03:00.
 // StartCalendarInterval fires even if the machine was asleep at the scheduled
 // time — launchd will run the job at the next opportunity after wake.
 const brewMaintenancePlistContent = `<?xml version="1.0" encoding="UTF-8"?>
@@ -43,8 +43,6 @@ const brewMaintenancePlistContent = `<?xml version="1.0" encoding="UTF-8"?>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
         <key>Hour</key>
         <integer>3</integer>
         <key>Minute</key>
@@ -112,5 +110,5 @@ func loadBrewMaintenanceDaemon(r *Runner) Result {
 	if err != nil {
 		return FailResult("brew-maintenance-daemon", "launchctl bootstrap failed: "+out, err)
 	}
-	return OKResult("brew-maintenance-daemon", brewMaintenanceLabel+" loaded — runs every Sunday at 03:00")
+	return OKResult("brew-maintenance-daemon", brewMaintenanceLabel+" loaded — runs daily at 03:00")
 }
