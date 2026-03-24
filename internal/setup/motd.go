@@ -53,6 +53,28 @@ IPS=$(ifconfig \
          {print $2, "(" iface ")"}' \
   | awk 'NR==1 {print; next} {printf "           %s\n", $0}')
 
+# Software updates: refresh the list in the background every hour so this
+# script never blocks waiting for Apple's servers. On the first run the cache
+# will not exist yet, so "checking..." is shown until the background job writes
+# it. The next 5-minute tick will display the real count.
+UPDATE_CACHE=/var/run/update-motd-sw-updates
+UPDATE_TTL=3600
+NOW=$(date +%s)
+CACHE_AGE=$(( NOW - $(stat -f %m "$UPDATE_CACHE" 2>/dev/null || echo 0) ))
+if [ ! -f "$UPDATE_CACHE" ] || [ "$CACHE_AGE" -gt "$UPDATE_TTL" ]; then
+    softwareupdate -l > "$UPDATE_CACHE" 2>&1 &
+fi
+if [ -f "$UPDATE_CACHE" ]; then
+    UPDATE_COUNT=$(grep -c '^\*' "$UPDATE_CACHE" 2>/dev/null || true)
+    if [ "${UPDATE_COUNT:-0}" -gt 0 ]; then
+        UPDATES="${UPDATE_COUNT} available — run: sudo softwareupdate -ia"
+    else
+        UPDATES="up to date"
+    fi
+else
+    UPDATES="checking..."
+fi
+
 SEP=$(printf '=%.0s' {1..51})
 
 cat > /etc/motd << MOTD
@@ -60,13 +82,15 @@ cat > /etc/motd << MOTD
 ${SEP}
 ${HOSTNAME}
 ${SEP}
-  OS:      ${OS_NAME} ${OS_VER} (${ARCH})
+  OS:      ${OS_NAME} ${OS_VER}
+  Arch:    ${ARCH}
   Uptime:  ${UPTIME}
   Load:    ${LOAD}
   CPU:     ${CPU}
   Memory:  ${MEM_USED} used / ${MEM_TOTAL} total
   Disk:    ${DISK} (/)
   IP:      ${IPS}
+  Updates: ${UPDATES}
 ${SEP}
 
 MOTD
