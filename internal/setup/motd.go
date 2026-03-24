@@ -1,0 +1,161 @@
+package setup
+
+import (
+	"os"
+	"strings"
+)
+
+const (
+	motdScriptPath = "/opt/macsetup/update-motd"
+	motdPlistPath  = "/Library/LaunchDaemons/com.macsetup.update-motd.plist"
+	motdLabel      = "com.macsetup.update-motd"
+)
+
+// motdScript is the shell script written to /opt/macsetup/update-motd.
+// It runs every 5 minutes via launchd and writes current system info to
+// /etc/motd, which sshd displays after each successful login.
+//
+// Multiple non-loopback IPv4 addresses are each printed on their own line,
+// aligned beneath the "IP:" label so the output stays readable on machines
+// with several interfaces or VPN tunnels active.
+const motdScript = `#!/bin/bash
+# update-motd — writes system info to /etc/motd on each run.
+# Managed by setupmac; edit /opt/macsetup/update-motd to customise.
+
+HOSTNAME=$(scutil --get LocalHostName 2>/dev/null || hostname)
+OS_NAME=$(sw_vers -productName)
+OS_VER=$(sw_vers -productVersion)
+ARCH=$(uname -m)
+
+# uptime(1) on macOS: "... up 3 days, 4:12, 2 users, load averages: 0.42 0.38 0.31"
+UPTIME=$(uptime | sed -E 's/.*up ([^,]+,[^,]+),.*/\1/' | xargs)
+LOAD=$(uptime | awk -F'load averages:' '{print $2}' | xargs)
+
+CPU=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown")
+
+MEM_TOTAL=$(sysctl -n hw.memsize | awk '{printf "%.0f GB", $1/1073741824}')
+PAGE_SIZE=$(vm_stat | awk '/page size/ {print $8}')
+USED_PAGES=$(vm_stat | awk '
+  /Pages active:/   { gsub(/\./, "", $3); a=$3 }
+  /Pages wired/     { gsub(/\./, "", $4); w=$4 }
+  END               { print a+w }
+')
+MEM_USED=$(echo "$PAGE_SIZE $USED_PAGES" | awk '{printf "%.1f GB", $1*$2/1073741824}')
+
+DISK=$(df -h / | awk 'NR==2 {printf "%s used / %s total", $3, $2}')
+
+# All non-loopback, non-link-local IPv4 addresses with their interface name.
+# First entry is printed inline with the "IP:" label; subsequent entries are
+# indented to align beneath it (11 spaces = length of "  IP:      ").
+IPS=$(ifconfig \
+  | awk '/^[a-z]/ {iface=$1; gsub(/:$/, "", iface)} \
+         /inet / && !/127\.0\.0\.1/ && !/169\.254\./ \
+         {print $2, "(" iface ")"}' \
+  | awk 'NR==1 {print; next} {printf "           %s\n", $0}')
+
+SEP=$(printf '\xe2\x94\x80%.0s' $(seq 1 $(echo -n "$HOSTNAME" | wc -c | tr -d ' ')))
+
+cat > /etc/motd << MOTD
+
+${HOSTNAME}
+${SEP}
+  OS:      ${OS_NAME} ${OS_VER} (${ARCH})
+  Uptime:  ${UPTIME}
+  Load:    ${LOAD}
+  CPU:     ${CPU}
+  Memory:  ${MEM_USED} used / ${MEM_TOTAL} total
+  Disk:    ${DISK} (/)
+  IP:      ${IPS}
+
+MOTD
+`
+
+// motdPlist is the launchd daemon plist that runs update-motd at boot and
+// every 5 minutes (300 seconds) thereafter.
+const motdPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.macsetup.update-motd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/macsetup/update-motd</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/update-motd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/update-motd.log</string>
+</dict>
+</plist>
+`
+
+// SetupMOTD writes a shell script that generates a system-info summary and
+// installs a launchd daemon that runs it every 5 minutes. The result is a
+// fresh /etc/motd displayed by sshd after each successful login, showing the
+// hostname, OS, uptime, load, CPU, memory, disk, and all active IP addresses.
+func SetupMOTD(r *Runner) []Result {
+	var results []Result
+
+	results = append(results, writeMotdScript(r))
+	results = append(results, writeMotdPlist(r))
+	results = append(results, loadMotdDaemon(r))
+
+	return results
+}
+
+func writeMotdScript(r *Runner) Result {
+	// Skip if the script already exists with identical content — avoids
+	// reloading the daemon unnecessarily on repeated runs.
+	if existing, err := os.ReadFile(motdScriptPath); err == nil {
+		if strings.TrimRight(string(existing), "\n") == strings.TrimRight(motdScript, "\n") {
+			return SkipResult("motd-script", motdScriptPath+" already up to date")
+		}
+	}
+
+	if r.DryRun {
+		return OKResult("motd-script", "would write "+motdScriptPath+" (dry-run)")
+	}
+
+	if err := os.WriteFile(motdScriptPath, []byte(motdScript), 0755); err != nil {
+		return FailResult("motd-script", "failed to write "+motdScriptPath, err)
+	}
+	return OKResult("motd-script", "wrote "+motdScriptPath)
+}
+
+func writeMotdPlist(r *Runner) Result {
+	if _, err := os.Stat(motdPlistPath); err == nil {
+		return SkipResult("motd-plist", motdPlistPath+" already exists")
+	}
+
+	if r.DryRun {
+		return OKResult("motd-plist", "would write "+motdPlistPath+" (dry-run)")
+	}
+
+	if err := os.WriteFile(motdPlistPath, []byte(motdPlist), 0644); err != nil {
+		return FailResult("motd-plist", "failed to write "+motdPlistPath, err)
+	}
+	// LaunchDaemons plists must be owned by root:wheel.
+	if err := os.Chown(motdPlistPath, 0, 0); err != nil {
+		return FailResult("motd-plist", "failed to set root ownership on "+motdPlistPath, err)
+	}
+	return OKResult("motd-plist", "wrote "+motdPlistPath)
+}
+
+func loadMotdDaemon(r *Runner) Result {
+	// launchctl print exits 0 when the service is already loaded.
+	if _, err := r.Read("launchctl", "print", "system/"+motdLabel); err == nil {
+		return SkipResult("motd-daemon", motdLabel+" already loaded")
+	}
+
+	out, err := r.Run("launchctl", "bootstrap", "system", motdPlistPath)
+	if err != nil {
+		return FailResult("motd-daemon", "launchctl bootstrap failed: "+out, err)
+	}
+	return OKResult("motd-daemon", motdLabel+" loaded — /etc/motd will be written momentarily")
+}

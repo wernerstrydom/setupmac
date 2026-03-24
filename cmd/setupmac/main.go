@@ -131,6 +131,12 @@ func main() {
 		all = append(all, warn)
 	}
 
+	printSection("MOTD")
+	for _, res := range setup.SetupMOTD(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("Login Banner")
 	bannerFile := ""
 	if plan.BannerOrg != "" {

@@ -30,6 +30,7 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 	results = append(results, verifyHomebrew())
 	results = append(results, verifyNTP(r))
 	results = append(results, verifyAutoUpdates(r))
+	results = append(results, verifyMOTD())
 
 	return results
 }
@@ -288,6 +289,18 @@ func verifyFirewall(r *Runner) Result {
 	}
 	return FailResult("verify-firewall",
 		fmt.Sprintf("firewall not enabled: %s", strings.TrimSpace(out)), nil)
+}
+
+func verifyMOTD() Result {
+	info, err := os.Stat("/etc/motd")
+	if err != nil || info.Size() == 0 {
+		return FailResult("verify-motd",
+			"/etc/motd missing or empty — MOTD daemon may not have run yet", err)
+	}
+	if _, err := os.Stat(motdScriptPath); err != nil {
+		return FailResult("verify-motd", motdScriptPath+" not found", err)
+	}
+	return OKResult("verify-motd", "MOTD")
 }
 
 func verifyNTP(r *Runner) Result {
