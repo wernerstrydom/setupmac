@@ -64,15 +64,15 @@ CACHE_AGE=$(( NOW - $(stat -f %m "$UPDATE_CACHE" 2>/dev/null || echo 0) ))
 if [ ! -f "$UPDATE_CACHE" ] || [ "$CACHE_AGE" -gt "$UPDATE_TTL" ]; then
     softwareupdate -l > "$UPDATE_CACHE" 2>&1 &
 fi
+# Only set UPDATES when action is required. Security patches install
+# automatically; this catches anything the auto-updater does not cover
+# (non-critical updates, major OS upgrades listed separately by Apple).
+UPDATES=""
 if [ -f "$UPDATE_CACHE" ]; then
     UPDATE_COUNT=$(grep -c '^\*' "$UPDATE_CACHE" 2>/dev/null || true)
     if [ "${UPDATE_COUNT:-0}" -gt 0 ]; then
-        UPDATES="${UPDATE_COUNT} available — run: sudo softwareupdate -ia"
-    else
-        UPDATES="up to date"
+        UPDATES="  Updates: ${UPDATE_COUNT} pending — run: sudo softwareupdate -ia"
     fi
-else
-    UPDATES="checking..."
 fi
 
 SEP=$(printf '=%.0s' {1..51})
@@ -90,7 +90,7 @@ ${SEP}
   Memory:  ${MEM_USED} used / ${MEM_TOTAL} total
   Disk:    ${DISK} (/)
   IP:      ${IPS}
-  Updates: ${UPDATES}
+${UPDATES}
 ${SEP}
 
 MOTD

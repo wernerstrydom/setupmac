@@ -206,6 +206,12 @@ func main() {
 		all = append(all, res)
 	}
 
+	printSection("Brew Maintenance")
+	for _, res := range setup.SetupBrewMaintenance(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("Shell Setup")
 	for _, res := range setup.ConfigureShell(r, keyUsers) {
 		printResult(res)
