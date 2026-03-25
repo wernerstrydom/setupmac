@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/wstrydom/setupmac/internal/macos"
 )
@@ -31,6 +33,9 @@ func VerifyAll(r *Runner, ver macos.Version, username string) []Result {
 	results = append(results, verifyNTP(r))
 	results = append(results, verifyAutoUpdates(r))
 	results = append(results, verifyMOTD())
+	results = append(results, verifyAgentUsers())
+	results = append(results, verifyWorkspace())
+	results = append(results, verifyAgentWrappers())
 
 	return results
 }
@@ -312,6 +317,70 @@ func verifyNTP(r *Runner) Result {
 		return OKResult("verify-ntp", "NTP")
 	}
 	return FailResult("verify-ntp", fmt.Sprintf("network time not enabled: %s", strings.TrimSpace(out)), nil)
+}
+
+func verifyAgentUsers() Result {
+	var missing []string
+	for _, name := range AgentUserNames {
+		if _, err := user.Lookup(name); err != nil {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return FailResult("verify-agent-users",
+			"agent users not found: "+strings.Join(missing, ", "), nil)
+	}
+	return OKResult("verify-agent-users", "AI agent users")
+}
+
+func verifyWorkspace() Result {
+	info, err := os.Stat(agentWorkspaceDir)
+	if err != nil {
+		return FailResult("verify-workspace",
+			fmt.Sprintf("%s not found", agentWorkspaceDir), err)
+	}
+	if !info.IsDir() {
+		return FailResult("verify-workspace",
+			agentWorkspaceDir+" is not a directory", nil)
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return WarnResult("verify-workspace", "could not read filesystem metadata for "+agentWorkspaceDir)
+	}
+
+	g, err := user.LookupGroup(agentGroupName)
+	if err != nil {
+		return WarnResult("verify-workspace", "group "+agentGroupName+" not found")
+	}
+
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		return WarnResult("verify-workspace", "invalid GID for group "+agentGroupName)
+	}
+
+	if int(stat.Gid) != gid {
+		return FailResult("verify-workspace",
+			fmt.Sprintf("%s group GID is %d, want %d (%s)",
+				agentWorkspaceDir, stat.Gid, gid, agentGroupName), nil)
+	}
+
+	return OKResult("verify-workspace", "AI agent workspace")
+}
+
+func verifyAgentWrappers() Result {
+	var missing []string
+	for _, spec := range agentToolSpecs {
+		wrapperPath := brewWrapperDir + "/" + spec.binaryName
+		if _, err := os.Stat(wrapperPath); err != nil {
+			missing = append(missing, spec.binaryName)
+		}
+	}
+	if len(missing) > 0 {
+		return WarnResult("verify-agent-wrappers",
+			"agent wrappers not found: "+strings.Join(missing, ", "))
+	}
+	return OKResult("verify-agent-wrappers", "AI agent wrappers")
 }
 
 func verifyAutoUpdates(r *Runner) Result {

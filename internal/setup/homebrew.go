@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	brewUserName    = "homebrew_owner"
+	brewUserName    = "_homebrew"
 	brewUserDesc    = "Homebrew Dedicated Owner"
 	sudoersPath     = "/etc/sudoers.d/homebrew-multiuser"
 	brewWrapperDir  = "/opt/macsetup"
@@ -51,6 +51,8 @@ func SetupHomebrew(r *Runner, ver macos.Version) []Result {
 
 	var results []Result
 
+	results = append(results, migrateBrewUser(r))
+
 	res := createBrewUser(r, ver)
 	results = append(results, res)
 	if res.Status == Fail {
@@ -76,6 +78,51 @@ func SetupHomebrew(r *Runner, ver macos.Version) []Result {
 	results = append(results, injectBrewPath(r))
 
 	return results
+}
+
+// migrateBrewUser renames the legacy homebrew_owner account to _homebrew using
+// an in-place Directory Services rename. No reboot is required because the
+// account is non-interactive and is never used for a GUI login session.
+func migrateBrewUser(r *Runner) Result {
+	const legacyName = "homebrew_owner"
+
+	// Nothing to do if _homebrew already exists (fresh install or already migrated).
+	if _, err := user.Lookup(brewUserName); err == nil {
+		return SkipResult("brew-user-migrate", fmt.Sprintf("user %q already exists, no migration needed", brewUserName))
+	}
+	// Nothing to migrate if the legacy account doesn't exist either.
+	if _, err := user.Lookup(legacyName); err != nil {
+		return SkipResult("brew-user-migrate", fmt.Sprintf("legacy user %q not found, nothing to migrate", legacyName))
+	}
+
+	legacyHome := "/var/" + legacyName
+	newHome := "/var/" + brewUserName
+
+	if r.DryRun {
+		fmt.Printf("  [dry-run] rename %s → %s in Directory Services\n", legacyName, brewUserName)
+		return OKResult("brew-user-migrate", fmt.Sprintf("would rename %s → %s (dry-run)", legacyName, brewUserName))
+	}
+
+	// 1. Update the NFSHomeDirectory attribute so macOS points to the new path.
+	if out, err := r.Run("dscl", ".", "-change",
+		"/Users/"+legacyName, "NFSHomeDirectory", legacyHome, newHome); err != nil {
+		return FailResult("brew-user-migrate", out, err)
+	}
+
+	// 2. Move the home directory on disk.
+	if err := os.Rename(legacyHome, newHome); err != nil {
+		return FailResult("brew-user-migrate",
+			fmt.Sprintf("failed to move %s → %s: %v", legacyHome, newHome, err), err)
+	}
+
+	// 3. Rename the Directory Services record. After this call the record path
+	//    changes from /Users/homebrew_owner to /Users/_homebrew.
+	if out, err := r.Run("dscl", ".", "-change",
+		"/Users/"+legacyName, "RecordName", legacyName, brewUserName); err != nil {
+		return FailResult("brew-user-migrate", out, err)
+	}
+
+	return OKResult("brew-user-migrate", fmt.Sprintf("renamed %s → %s", legacyName, brewUserName))
 }
 
 // createBrewUser creates a hidden service account that owns the Homebrew

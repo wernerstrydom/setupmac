@@ -218,6 +218,24 @@ func main() {
 		all = append(all, res)
 	}
 
+	printSection("AI Agent Users")
+	for _, res := range setup.SetupAgentUsers(r, ver, plan.GitHubKeysUser) {
+		printResult(res)
+		all = append(all, res)
+	}
+
+	printSection("AI Workspace")
+	for _, res := range setup.SetupAgentWorkspace(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
+	printSection("AI Tools")
+	for _, res := range setup.InstallAgentTools(r) {
+		printResult(res)
+		all = append(all, res)
+	}
+
 	printSection("Verification")
 	verResults := setup.VerifyAll(r, ver, plan.Username)
 	for _, res := range verResults {
